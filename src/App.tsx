@@ -5,9 +5,22 @@ import { UploadCloud, Clipboard, Sparkles, FileImage, X, Check, AlertTriangle, C
 type Kind = 'Banda' | 'Gelo' | 'Gás' | 'Carvão';
 type Form = { kind:Kind; supplier:string; bandName:string; amount:string; payment:string; referenceDays:string; competence:string; category:string; description:string; pix:string };
 const empty:Form={kind:'Banda',supplier:'',bandName:'',amount:'',payment:'',referenceDays:'',competence:'',category:'',description:'',pix:''};
-const PARSER_VERSION=11;
+const PARSER_VERSION=12;
 const dateRx=/\b([0-3]?\d[\/.-][01]?\d(?:[\/.-](?:20)?\d{2})?)\b/g;
 const normalize=(v:string,year:string)=>{const p=v.replace(/[.-]/g,'/').split('/');if(p.length===2)p.push(year);if(p[2]?.length===2)p[2]='20'+p[2];return p.map((x,i)=>i<2?x.padStart(2,'0'):x).join('/')};
+function normalizeMoney(line:string){
+ const afterLabel=line.replace(/^.*?(?:val[o0]r|total)\s*[:;.,-]?\s*/i,'').replace(/^(?:r\s*)?[\$s]\s*/i,'').trim();
+ const token=afterLabel.match(/[0-9oObBiIlLsS]+(?:[.,][0-9oObBiIlLsS]+)*/)?.[0]
+   ?.replace(/[oO]/g,'0').replace(/[bB]/g,'8').replace(/[iIlL]/g,'1').replace(/[sS]/g,'5');
+ if(!token)return '';
+ const groups=token.split(/[.,]/); let cents='00',integer='';
+ if(groups.length===1)integer=groups[0];
+ else if(groups.at(-1)!.length<=2){cents=groups.pop()!.padEnd(2,'0');integer=groups.join('')}
+ else{integer=groups.join('')}
+ integer=integer.replace(/^0+(?=\d)/,'');
+ if(!/^\d+$/.test(integer)||!/^\d{2}$/.test(cents))return '';
+ return integer.replace(/\B(?=(\d{3})+(?!\d))/g,'.')+','+cents;
+}
 function parse(raw:string){
  const text=raw.replace(/\r/g,''),low=text.toLocaleLowerCase('pt-BR'),warnings:string[]=[];
  let detected:Kind|null=/carv[aã]o/.test(low)?'Carvão':/\bg[aá]s\b/.test(low)?'Gás':/gelo/.test(low)?'Gelo':/banda|grupo|show|cach[eê]/.test(low)?'Banda':null;
@@ -15,21 +28,8 @@ function parse(raw:string){
  const kind:Kind=detected; const year=(text.match(/\b20\d{2}\b/)||[String(new Date().getFullYear())])[0];
  const cleanLine=(line:string)=>line.replace(/\b(?:[01]?\d|2[0-3]):[0-5]\d\b/g,'').replace(/[✓✔]{1,2}/g,'').replace(/\s{2,}/g,' ').trim();
  const lines=text.split('\n').map(cleanLine).filter(Boolean);
- const valueLine=lines.find(l=>/\bvalor\b|\btotal\b|\bpag(?:ar|amento)\b|(?:r\s*)?\$/i.test(l));
- const visualNumber=valueLine?.match(/(?:val[o0]r|total|(?:r\s*)?[\$s5])\s*[\s:;.,-]*[\$s5]?\s*([0-9oObBiIlLsS.,]+)/i)?.[1]
-   ?.replace(/[oO]/g,'0').replace(/[bB]/g,'8').replace(/[iIlL]/g,'1').replace(/[sS]/g,'5');
- const explicitValue=visualNumber
-   ? /^\d{1,3}(?:[,]\d{3})+[,]\d{1,2}$/.test(visualNumber) ? (()=>{const parts=visualNumber.split(',');const cents=parts.pop()!.padEnd(2,'0');return parts.join('.')+','+cents})()
-   : /^\d{1,3}(?:[.]\d{3})+[,]\d{1,2}$/.test(visualNumber) ? (/,\d$/.test(visualNumber)?visualNumber+'0':visualNumber)
-   : /^\d{1,3}(?:[,]\d{3})+[.]\d{1,2}$/.test(visualNumber) ? visualNumber.replace(/,/g,'').replace('.',',')
-   : /^\d{1,3}(?:[.]\d{3})+$/.test(visualNumber) ? visualNumber+',00'
-   : /^\d{1,3}(?:[,]\d{3})+$/.test(visualNumber) ? visualNumber.replace(/,/g,'.')+',00'
-   : /^\d+[,]\d{1,2}$/.test(visualNumber) ? (/,\d$/.test(visualNumber)?visualNumber+'0':visualNumber)
-   : /^\d+$/.test(visualNumber) ? visualNumber+',00' : ''
-   : '';
- const moneyWithCents=[...text.matchAll(/(?:(?:R\s*)?\$\s*)?((?:\d{1,3}(?:\.\d{3})*|\d+),\d{1,2})(?!\d)/gi)].map(m=>/,\d$/.test(m[1])?m[1]+'0':m[1]);
- const integerValue=valueLine?.replace(dateRx,'').match(/(?:(?:R\s*)?\$\s*)?\b(\d{1,3}(?:\.\d{3})*|\d{2,6})\b/i)?.[1];
- const amounts=explicitValue?[explicitValue]:moneyWithCents.length?moneyWithCents:integerValue?[integerValue+',00']:[];
+ const valueLine=lines.find(l=>/\bval[o0]r\b|\btotal\b/i.test(l));
+ const amount=valueLine?normalizeMoney(valueLine):'';
  const paymentLine=lines.find(l=>/pagamento|pagar|vencimento|venc\.?/i.test(l)); const pay=paymentLine?.match(dateRx)?.[0]||'';
  const refLines=lines.filter(l=>/refer|evento|dias?|datas?/i.test(l)&&!/pagamento|venc/i.test(l));
  const refs=[...new Set(refLines.flatMap(l=>l.match(dateRx)||[]).map(d=>normalize(d,year)))];
@@ -37,9 +37,9 @@ function parse(raw:string){
  const pixLine=lines.find(l=>/pix|chave/i.test(l)); const pix=pixLine?.replace(/^.*?(?:pix|chave)\s*:?-?\s*/i,'').trim()||'';
  const supplierLine=lines.find(l=>/favorecid|fornecedor|benefici[aá]rio|recebedor|titular/i.test(l)); const supplier=cleanLine(supplierLine?.replace(/^.*?(?:favorecid[oa]?|fornecedor|benefici[aá]rio|recebedor|titular)\s*:?-?\s*/i,'')||'');
  const bandLine=lines.find(l=>/banda\s*:|grupo\s*:/i.test(l)); const bandName=bandLine?.replace(/^.*?(?:banda|grupo)\s*:?-?\s*/i,'').trim()||'';
- if(!amounts.length)warnings.push('Valor não encontrado.'); if(!pay)warnings.push('Data de pagamento não encontrada.'); if(!supplier)warnings.push('Favorecido não identificado com segurança.'); if(kind==='Banda'&&!bandName)warnings.push('Nome da banda não identificado.');
+ if(!amount)warnings.push('Valor não encontrado.'); if(!pay)warnings.push('Data de pagamento não encontrada.'); if(!supplier)warnings.push('Favorecido não identificado com segurança.'); if(kind==='Banda'&&!bandName)warnings.push('Nome da banda não identificado.');
  if(!refs.length)warnings.push(kind==='Banda'?'Data do evento não encontrada.':'Dias referentes não encontrados; revise a competência.');
- const form:Form={kind,supplier,bandName,amount:amounts[0]||'',payment:pay?normalize(pay,year):'',referenceDays:refs.join(', '),competence,category:kind==='Banda'?'Couvert Artístico':kind,description:kind==='Banda'&&competence?`Data do evento: ${competence} Banda: ${bandName}`:'',pix};
+ const form:Form={kind,supplier,bandName,amount,payment:pay?normalize(pay,year):'',referenceDays:refs.join(', '),competence,category:kind==='Banda'?'Couvert Artístico':kind,description:kind==='Banda'&&competence?`Data do evento: ${competence} Banda: ${bandName}`:'',pix};
  return {form,warnings};
 }
 function Field({label,value,onChange,wide=false}:{label:string;value:string;onChange:(v:string)=>void;wide?:boolean}){return <label className={wide?'field wide':'field'}><span>{label}</span><input placeholder="Revisar" value={value} onChange={e=>onChange(e.target.value)}/></label>}
