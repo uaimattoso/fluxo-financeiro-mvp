@@ -85,7 +85,7 @@ const empty: Form = {
   description: "",
   pix: "",
 };
-const PARSER_VERSION = 12;
+const PARSER_VERSION = 13;
 const HOUSES: House[] = [
   "Bafo da Prainha",
   "Capiau",
@@ -138,6 +138,18 @@ function normalizeMoney(line: string) {
   integer = integer.replace(/^0+(?=\d)/, "");
   if (!/^\d+$/.test(integer) || !/^\d{2}$/.test(cents)) return "";
   return integer.replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "," + cents;
+}
+function extractDocumentTotal(text: string) {
+  const normalized = text.replace(/\u00a0/g, " ").replace(/\s+/g, " ");
+  const patterns = [
+    /(?:valor\s+do\s+documento|valor\s+cobrado|total\s+do\s+boleto|valor\s+total)[^\d]{0,35}([\d.]+,\d{2})/i,
+    /R\s*\$\s*([\d.]+,\d{2})/i,
+  ];
+  for (const pattern of patterns) {
+    const value = normalized.match(pattern)?.[1];
+    if (value) return value;
+  }
+  return "";
 }
 const moneyToCents = (value: string) => {
   const normalized = value
@@ -200,7 +212,7 @@ function parse(raw: string) {
       .trim();
   const lines = text.split("\n").map(cleanLine).filter(Boolean);
   const valueLine = lines.find((l) => /\bval[o0]r\b|\btotal\b/i.test(l));
-  const documentMoney = text.match(/R\$\s*([\d.]+,\d{2})/i)?.[1] || "";
+  const documentMoney = extractDocumentTotal(text);
   const amount =
     kind === "Rateio CRS"
       ? documentMoney
