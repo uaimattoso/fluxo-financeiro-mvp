@@ -95,10 +95,16 @@ const HOUSES: House[] = [
 ];
 const RESTAURANTS: Restaurant[] = [
   "Bafo da Prainha",
+  "Casa Porto",
   "Capiau",
   "Dois de Fevereiro",
-  "Casa Porto",
 ];
+const CRS_ALLOCATION: Record<Restaurant, number> = {
+  "Bafo da Prainha": 42,
+  Capiau: 26,
+  "Dois de Fevereiro": 12,
+  "Casa Porto": 20,
+};
 const HOUSE_STORAGE_KEY = "fluxo:selected-house";
 const dateRx = /\b([0-3]?\d[\/.-][01]?\d(?:[\/.-](?:20)?\d{2})?)\b/g;
 const normalize = (v: string, year: string) => {
@@ -301,11 +307,13 @@ function Field({
   value,
   onChange,
   wide = false,
+  readOnly = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   wide?: boolean;
+  readOnly?: boolean;
 }) {
   return (
     <label className={wide ? "field wide" : "field"}>
@@ -313,6 +321,7 @@ function Field({
       <input
         placeholder="Revisar"
         value={value}
+        readOnly={readOnly}
         onChange={(e) => onChange(e.target.value)}
       />
     </label>
@@ -361,7 +370,6 @@ function CrsReview({
   form,
   update,
   allocations,
-  setAllocation,
   entries,
   totalCents,
   allocatedCents,
@@ -372,7 +380,6 @@ function CrsReview({
   form: Form;
   update: (key: keyof Form, value: string) => void;
   allocations: Record<Restaurant, string>;
-  setAllocation: (restaurant: Restaurant, value: string) => void;
   entries: CrsEntry[];
   totalCents: number;
   allocatedCents: number;
@@ -432,7 +439,7 @@ function CrsReview({
       <div className="allocation-head">
         <div>
           <h3>Rateio entre os restaurantes</h3>
-          <p>Informe quanto cada casa deve reembolsar à CRS.</p>
+          <p>Proporção fixa aplicada automaticamente ao total do boleto.</p>
         </div>
         <span className={balanced ? "validation ok" : "validation"}>
           {balanced ? <Check /> : <AlertTriangle />}
@@ -445,9 +452,10 @@ function CrsReview({
         {RESTAURANTS.map((restaurant) => (
           <Field
             key={restaurant}
-            label={restaurant}
+            label={`${restaurant} · ${CRS_ALLOCATION[restaurant]}%`}
             value={allocations[restaurant]}
-            onChange={(v) => setAllocation(restaurant, v)}
+            onChange={() => {}}
+            readOnly
           />
         ))}
       </div>
@@ -596,6 +604,21 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(HOUSE_STORAGE_KEY, house);
   }, [house]);
+  useEffect(() => {
+    if (!crsFlow) return;
+    const total = moneyToCents(form.amount);
+    let distributed = 0;
+    const next = {} as Record<Restaurant, string>;
+    RESTAURANTS.forEach((restaurant, index) => {
+      const cents =
+        index === RESTAURANTS.length - 1
+          ? total - distributed
+          : Math.round((total * CRS_ALLOCATION[restaurant]) / 100);
+      distributed += cents;
+      next[restaurant] = centsToMoney(cents);
+    });
+    setAllocations(next);
+  }, [crsFlow, form.amount]);
   useEffect(() => {
     if (!ocrText || stage === "loading") return;
     const parsed = parse(ocrText);
@@ -978,12 +1001,6 @@ export function App() {
               form={form}
               update={update}
               allocations={allocations}
-              setAllocation={(restaurant, value) =>
-                setAllocations((current) => ({
-                  ...current,
-                  [restaurant]: value,
-                }))
-              }
               entries={crsEntries}
               totalCents={totalCents}
               allocatedCents={allocatedCents}

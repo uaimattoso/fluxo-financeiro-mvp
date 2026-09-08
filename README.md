@@ -9,6 +9,7 @@ MVP para leitura de prints de ordens de pagamento e geração de sugestões estr
 - Cada casa mantém sessão, catálogos, mapeamentos e controle de duplicidade próprios no servidor interno.
 - A Casa de Apoio CRS está preparada como licença separada para o futuro espelhamento dos rateios em receitas e para a despesa total.
 - Boletos de despesas rateadas da CRS geram uma revisão com quatro receitas, usando cada restaurante como cliente, e uma despesa com o beneficiário como fornecedor. A confirmação fica bloqueada até as quatro receitas somarem exatamente o valor da despesa.
+- O rateio da CRS é fixo: Bafo da Prainha 42%, Casa Porto 20%, Capiau 26% e Dois de Fevereiro 12%.
 - Banda: novo lançamento, categoria Couvert Artístico.
 - Gelo, Gás e Carvão: atualizar recorrência em aberto.
 - A imagem é processada localmente no navegador.
