@@ -4,6 +4,8 @@ MVP para leitura de prints de ordens de pagamento e geração de sugestões estr
 
 ## Regras atuais
 
+- O menu de contexto seleciona a casa em gestão: Bafo da Prainha, Capiau, Dois de Fevereiro, Casa Porto ou Casa de Apoio CRS.
+- A casa selecionada permanece salva neste navegador e acompanha a revisão do lançamento.
 - Banda: novo lançamento, categoria Couvert Artístico.
 - Gelo, Gás e Carvão: atualizar recorrência em aberto.
 - A imagem é processada localmente no navegador.
