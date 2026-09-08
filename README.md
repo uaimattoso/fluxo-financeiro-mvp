@@ -6,6 +6,8 @@ MVP para leitura de prints de ordens de pagamento e geração de sugestões estr
 
 - O menu de contexto seleciona a casa em gestão: Bafo da Prainha, Capiau, Dois de Fevereiro, Casa Porto ou Casa de Apoio CRS.
 - A casa selecionada permanece salva neste navegador e acompanha a revisão do lançamento.
+- Cada casa mantém sessão, catálogos, mapeamentos e controle de duplicidade próprios no servidor interno.
+- A Casa de Apoio CRS está preparada como licença separada para o futuro espelhamento dos rateios em receitas e para a despesa total.
 - Banda: novo lançamento, categoria Couvert Artístico.
 - Gelo, Gás e Carvão: atualizar recorrência em aberto.
 - A imagem é processada localmente no navegador.
@@ -25,4 +27,4 @@ pnpm dev
 3. Inicie também o servidor seguro com `pnpm api`.
 4. Use **Conectar Conta Azul**, selecione os vínculos e revise antes de criar.
 
-Credenciais, tokens, mapeamentos e protocolos ficam na pasta local `.data`, que não é enviada ao GitHub. Reenvios idênticos são bloqueados pelo servidor.
+Credenciais, tokens, mapeamentos e protocolos ficam na pasta local `.data`, separados por casa; essa pasta não é enviada ao GitHub. Reenvios idênticos são bloqueados por casa.
