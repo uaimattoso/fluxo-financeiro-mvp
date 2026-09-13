@@ -60,8 +60,13 @@ type CrsEntry = {
   amount: string;
   description: string;
 };
-const BRIDGE = "https://script.google.com/macros/s/AKfycbxw0xo23_7QDtbz-JOttoog4EN7_9nB7daPNGrw4Z5fywYGZBMqMYLEsYe5IdrVjek/exec";
-const AUTH = BRIDGE + "?action=authorize";
+const BRIDGES = {
+  "Bafo da Prainha": "https://script.google.com/macros/s/AKfycbxw0xo23_7QDtbz-JOttoog4EN7_9nB7daPNGrw4Z5fywYGZBMqMYLEsYe5IdrVjek/exec",
+  "Casa de Apoio CRS": "https://script.google.com/macros/s/AKfycbw7-WplZr-2N6pu76966H18o5DpyDNw2sR8No2ASCO9IdM8ZUXzMG_zg05M3VnV-Xh1/exec",
+} as const;
+type ConnectedHouse = keyof typeof BRIDGES;
+const CONNECTED_HOUSES = Object.keys(BRIDGES) as ConnectedHouse[];
+const hasBridge = (value: House): value is ConnectedHouse => value in BRIDGES;
 const blankCatalogs: Catalogs = {
   accounts: [],
   categories: [],
@@ -520,6 +525,7 @@ function CrsReview({
           {balanced ? <Check /> : <AlertTriangle />} Receitas = despesa
         </span>
       </div>
+      <p className="crs-note">Esta é uma simulação. Nenhuma receita ou despesa é enviada à Conta Azul nesta etapa.</p>
       {done ? (
         <div className="success">
           <Check /> Revisão dos cinco lançamentos confirmada.
@@ -573,21 +579,28 @@ export function App() {
     [caError, setCaError] = useState(""),
     [review, setReview] = useState<any>(null),
     [created, setCreated] = useState<any>(null);
-  const bridgeFrame = useRef<HTMLIFrameElement>(null);
-  const bridgeTarget = useRef<Window|null>(null);
-  const bridgeNonce = useRef(crypto.randomUUID());
+  const bridgeTarget = useRef<Partial<Record<ConnectedHouse, Window>>>({});
+  const bridgeNonce = useRef<Record<ConnectedHouse, string>>({
+    "Bafo da Prainha": crypto.randomUUID(),
+    "Casa de Apoio CRS": crypto.randomUUID(),
+  });
   const pendingBridge = useRef(new Map<string, {resolve:(value:any)=>void; reject:(reason:Error)=>void}>());
-  const [bridgeOrigin, setBridgeOrigin] = useState("");
-  const [accessKey, setAccessKey] = useState("");
+  const [bridgeOrigins, setBridgeOrigins] = useState<Partial<Record<ConnectedHouse, string>>>({});
+  const bridgeOrigin = hasBridge(house) ? bridgeOrigins[house] || "" : "";
+  const [accessKeys, setAccessKeys] = useState<Partial<Record<ConnectedHouse, string>>>({});
+  const accessKey = hasBridge(house) ? accessKeys[house] || "" : "";
   const [cpfLookup, setCpfLookup] = useState<CpfLookup>({cpf:"",people:[],loading:false,error:""});
   const [caUnlocked, setCaUnlocked] = useState(false);
   const [connectedCompany, setConnectedCompany] = useState("");
   const [companyChecked, setCompanyChecked] = useState(false);
-  const bridgeCall = (action:string, body:unknown = {}) => new Promise<any>((resolve,reject) => {
-    if (!bridgeOrigin || !bridgeTarget.current) return reject(new Error("Ponte Conta Azul indisponível."));
+  const bridgeCall = (action:string, body:unknown = {}, targetHouse: House = house) => new Promise<any>((resolve,reject) => {
+    if (!hasBridge(targetHouse)) return reject(new Error("Esta casa ainda não tem ponte Conta Azul."));
+    const origin = bridgeOrigins[targetHouse];
+    const target = bridgeTarget.current[targetHouse];
+    if (!origin || !target) return reject(new Error("Ponte Conta Azul indisponível."));
     const id = crypto.randomUUID();
     pendingBridge.current.set(id,{resolve,reject});
-    bridgeTarget.current.postMessage({source:"fluxo-ca-site",nonce:bridgeNonce.current,id,action,body,accessKey},bridgeOrigin);
+    target.postMessage({source:"fluxo-ca-site",nonce:bridgeNonce.current[targetHouse],id,action,body,accessKey:action==="status"?"":accessKeys[targetHouse] || ""},origin);
     window.setTimeout(() => {
       const pending=pendingBridge.current.get(id);
       if(pending){pendingBridge.current.delete(id);pending.reject(new Error("A ponte Conta Azul não respondeu."));}
@@ -595,14 +608,16 @@ export function App() {
   });
   useEffect(() => {
     const receive=(event:MessageEvent) => {
-      if(event.data?.source!=="fluxo-ca-bridge" || event.data.nonce!==bridgeNonce.current)return;
+      if(event.data?.source!=="fluxo-ca-bridge")return;
+      const targetHouse=CONNECTED_HOUSES.find((candidate)=>bridgeNonce.current[candidate]===event.data.nonce);
+      if(!targetHouse)return;
       if(!/^https:\/\/[a-z0-9-]+\.googleusercontent\.com$/.test(event.origin))return;
       if(event.data.type==="ready"){
-        bridgeTarget.current=event.source as Window;
-        setBridgeOrigin(event.origin);
+        bridgeTarget.current[targetHouse]=event.source as Window;
+        setBridgeOrigins((current)=>current[targetHouse]===event.origin?current:{...current,[targetHouse]:event.origin});
         return;
       }
-      if(event.source!==bridgeTarget.current)return;
+      if(event.source!==bridgeTarget.current[targetHouse])return;
       if(event.data.type!=="result")return;
       const pending=pendingBridge.current.get(event.data.id);
       if(!pending)return;
@@ -613,10 +628,10 @@ export function App() {
     return()=>window.removeEventListener("message",receive);
   },[]);
   useEffect(() => {
-    if(bridgeOrigin)return;
+    if(!hasBridge(house) || bridgeOrigin)return;
     const timer=window.setTimeout(()=>setCaError("A ponte Conta Azul não carregou. Atualize a implantação do Apps Script."),12000);
     return()=>window.clearTimeout(timer);
-  },[bridgeOrigin]);
+  },[house,bridgeOrigin]);
   const load = async (f: File) => {
     if (!f || (f.type !== "application/pdf" && !f.type.startsWith("image/")))
       return;
@@ -705,7 +720,7 @@ export function App() {
     setCaUnlocked(false);
     setConnectedCompany("");
     setCompanyChecked(false);
-    if (house === "Bafo da Prainha" && bridgeOrigin) {
+    if (hasBridge(house) && bridgeOrigin) {
       bridgeCall("status")
         .then((status) => {if(active)setCaStatus(status);})
         .catch((error) => {if(active)setCaError(error.message);});
@@ -715,13 +730,13 @@ export function App() {
     };
   }, [house, bridgeOrigin]);
   useEffect(() => {
-    if(house!=="Bafo da Prainha" || !bridgeOrigin)return;
+    if(!hasBridge(house) || !bridgeOrigin)return;
     const refresh=() => bridgeCall("status").then(setCaStatus).catch(error=>setCaError(error.message));
     window.addEventListener("focus",refresh);
     return()=>window.removeEventListener("focus",refresh);
   },[house,bridgeOrigin]);
   useEffect(() => {
-    if (!caStatus.connected || form.kind !== "Banda") return;
+    if (house!=="Bafo da Prainha" || !caStatus.connected || form.kind !== "Banda") return;
     const category = catalogs.categories.find(
       (x) => nameKey(x.name) === "couvert artistico",
     );
@@ -737,10 +752,10 @@ export function App() {
       };
       return JSON.stringify(next) === JSON.stringify(current) ? current : next;
     });
-  }, [form.kind, catalogs, caStatus.connected]);
+  }, [house, form.kind, catalogs, caStatus.connected]);
   useEffect(() => {
     const cpf = digits(form.pix);
-    if (!caUnlocked || form.kind !== "Banda" || !validCpf(cpf)) {
+    if (house!=="Bafo da Prainha" || !caUnlocked || form.kind !== "Banda" || !validCpf(cpf)) {
       setCpfLookup({cpf:"",people:[],loading:false,error:""});
       return;
     }
@@ -750,7 +765,7 @@ export function App() {
       .then((result) => { if(active)setCpfLookup({cpf,people:result.people || [],loading:false,error:""}); })
       .catch(() => { if(active)setCpfLookup({cpf,people:[],loading:false,error:"Não foi possível consultar o CPF no Conta Azul."}); });
     return () => { active = false; };
-  }, [form.pix, form.kind, caUnlocked]);
+  }, [house, form.pix, form.kind, caUnlocked]);
   const cpf = digits(form.pix);
   const supplierSuggestions = validCpf(cpf)
     ? (cpfLookup.cpf === cpf ? cpfLookup.people : [])
@@ -878,12 +893,12 @@ export function App() {
   };
   return (
     <main>
-      <iframe
-        ref={bridgeFrame}
-        title="Ponte segura Conta Azul"
-        src={BRIDGE+"?action=bridge&nonce="+bridgeNonce.current}
+      {CONNECTED_HOUSES.map((connectedHouse)=><iframe
+        key={connectedHouse}
+        title={"Ponte Conta Azul — "+connectedHouse}
+        src={BRIDGES[connectedHouse]+"?action=bridge&nonce="+bridgeNonce.current[connectedHouse]}
         style={{display:"none"}}
-      />
+      />)}
       <header>
         <div className="brand">
           <div className="brandmark">FL</div>
@@ -908,28 +923,28 @@ export function App() {
             <ChevronDown size={14} />
           </div>
         </label>
-        {house!=="Bafo da Prainha" ? (
+        {!hasBridge(house) ? (
           <div className="ca-connected">Integração desta casa pendente</div>
         ) : caStatus.connected ? (
           <div className="ca-access">
             <div className="ca-connected"><ShieldCheck size={15} /> Conta Azul conectada {connectedCompany && "· "+connectedCompany}</div>
-            {!caUnlocked && <><input
+            {!companyChecked && <><input
               aria-label="Chave de acesso do Fluxo"
               type="password"
               autoComplete="off"
               placeholder="Chave de acesso do Fluxo"
               value={accessKey}
-              onChange={e=>setAccessKey(e.target.value)}
-            />{!companyChecked
-              ? <button className="ca-connect" disabled={caBusy || !accessKey} onClick={inspectCa}>Conferir empresa</button>
-              : <button className="ca-connect" disabled={caBusy || connectedCompany==="Empresa não identificada"} onClick={unlockCa}>Confirmar Bafo da Prainha</button>}
+              onChange={e=>setAccessKeys((current)=>({...current,[house]:e.target.value}))}
+            /><button className="ca-connect" disabled={caBusy || !accessKey} onClick={inspectCa}>Conferir empresa</button>
             </>}
+            {companyChecked && house==="Bafo da Prainha" && !caUnlocked && <button className="ca-connect" disabled={caBusy || connectedCompany==="Empresa não identificada"} onClick={unlockCa}>Confirmar Bafo da Prainha</button>}
+            {companyChecked && house==="Casa de Apoio CRS" && <div className="ca-connected">Licença conferida · lançamentos da CRS em preparação</div>}
           </div>
         ) : (
           <button
             className="ca-connect"
             disabled={!bridgeOrigin}
-            onClick={() => window.open(AUTH,"_blank","noopener,noreferrer")}
+            onClick={() => window.open(BRIDGES[house]+"?action=authorize","_blank","noopener,noreferrer")}
           >
             <Link2 size={15} />{" "}
             {caStatus.configured
