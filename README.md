@@ -22,11 +22,19 @@ pnpm install
 pnpm dev
 ```
 
-## Conta Azul no ambiente interno
+## Conta Azul no site publicado — Bafo da Prainha
 
-1. Copie `.env.example` para `.env.local` e preencha `CA_CLIENT_ID` e `CA_CLIENT_SECRET`.
-2. Cadastre no aplicativo do Conta Azul o retorno `http://127.0.0.1:8787/auth/conta-azul/callback`.
-3. Inicie também o servidor seguro com `pnpm api`.
-4. Use **Conectar Conta Azul**, selecione os vínculos e revise antes de criar.
+O site usa a implantação do Google Apps Script indicada em `src/App.tsx`. Atualizar o GitHub Pages **não** atualiza o Apps Script. No projeto Apps Script dessa implantação:
 
-Credenciais, tokens, mapeamentos e protocolos ficam na pasta local `.data`, separados por casa; essa pasta não é enviada ao GitHub. Reenvios idênticos são bloqueados por casa.
+1. Substitua `Code.gs` e adicione o arquivo HTML `Bridge.html` da pasta `conta-azul-apps-script`.
+2. Nas Propriedades do script, configure `CA_CLIENT_ID`, `CA_CLIENT_SECRET` e `CA_REDIRECT_URI` (a URL `/exec` da própria implantação). Mantenha os tokens existentes; a conexão já autorizada pode ser reutilizada.
+3. Crie `FLUXO_ACCESS_KEY` com um valor aleatório longo e privado, gerado em um gerenciador de senhas. Esta chave protege consulta de cadastros, mapeamentos e criação de lançamentos. Não a coloque no GitHub, na URL nem no código da interface.
+4. Implante uma **nova versão da implantação existente**, preservando a mesma URL `/exec`. Se a URL mudar, atualize `BRIDGE` em `src/App.tsx` e o retorno cadastrado no Portal Conta Azul.
+5. Abra o site, selecione Bafo da Prainha, confira a empresa retornada pelo Conta Azul, informe a chave de acesso e confirme antes de criar.
+
+As outras quatro casas ficam sem conexão nesta etapa. A ponte antiga aceitava lançamentos sem autenticar o solicitante; a nova versão fecha as rotas públicas de consulta e escrita. O site não grava a chave de acesso no armazenamento do navegador.
+
+## Servidor local legado
+
+`pnpm api` mantém o servidor local separado para desenvolvimento, com dados em `.data`. O site publicado não usa esse servidor.
+
