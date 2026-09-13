@@ -901,7 +901,13 @@ export function App() {
           clientIds[restaurant]=uniqueCaMatch(loaded.clients || [],CRS_CLIENT_NAMES[restaurant]);
           receivableCategoryIds[restaurant]=uniqueCaMatch(loaded.categories || [],CRS_CATEGORY_NAMES[restaurant]);
         });
-        setCrsMappings({...blankCrsMappings,clientIds,receivableCategoryIds});
+        setCrsMappings({
+          ...blankCrsMappings,
+          accountId:(loaded.accounts || []).length===1 ? loaded.accounts[0].id : '',
+          payableCategoryId:uniqueCaMatch(loaded.categories || [],form.category),
+          supplierId:uniqueCaMatch(loaded.suppliers || [],form.supplier),
+          clientIds,receivableCategoryIds,
+        });
       }
     } catch(error) {
       setCaError(error instanceof Error?error.message:"Não foi possível conferir a empresa.");
