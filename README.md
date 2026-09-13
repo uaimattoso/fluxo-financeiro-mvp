@@ -6,8 +6,8 @@ MVP para leitura de prints de ordens de pagamento e geração de sugestões estr
 
 - O menu de contexto seleciona a casa em gestão: Bafo da Prainha, Capiau, Dois de Fevereiro, Casa Porto ou Casa de Apoio CRS.
 - A casa selecionada permanece salva neste navegador e acompanha a revisão do lançamento.
-- A implantação pública conecta apenas o Bafo da Prainha nesta etapa; as outras casas ainda precisam de licenças separadas.
-- A Casa de Apoio CRS está preparada como licença separada para o futuro espelhamento dos rateios em receitas e para a despesa total.
+- A implantação pública conecta o Bafo da Prainha e consulta a licença própria da Casa de Apoio CRS. Capiau, Dois de Fevereiro e Casa Porto ainda precisam de pontes separadas.
+- A Casa de Apoio CRS tem ponte e licença separadas para conferir a empresa conectada. O espelhamento dos rateios em receitas e da despesa total permanece em simulação, sem envio ao Conta Azul.
 - Boletos de despesas rateadas da CRS geram uma revisão com quatro receitas, usando cada restaurante como cliente, e uma despesa com o beneficiário como fornecedor. A confirmação fica bloqueada até as quatro receitas somarem exatamente o valor da despesa.
 - O rateio da CRS é fixo: Bafo da Prainha 42%, Casa Porto 20%, Capiau 26% e Dois de Fevereiro 12%.
 - Banda: novo lançamento, categoria Couvert Artístico.
@@ -33,7 +33,7 @@ O site usa a implantação do Google Apps Script indicada em `src/App.tsx`. Atua
 4. Implante uma **nova versão da implantação existente**, preservando a mesma URL `/exec`. Se a URL mudar, atualize `BRIDGE` em `src/App.tsx` e o retorno cadastrado no Portal Conta Azul.
 5. Abra o site, selecione Bafo da Prainha, confira a empresa retornada pelo Conta Azul, informe a chave de acesso e confirme antes de criar.
 
-As outras quatro casas ficam sem conexão nesta etapa. A ponte antiga aceitava lançamentos sem autenticar o solicitante; a nova versão fecha as rotas públicas de consulta e escrita. O site não grava a chave de acesso no armazenamento do navegador.
+A CRS usa a ponte própria documentada em `conta-azul-apps-script-crs/README.md`. Capiau, Dois de Fevereiro e Casa Porto continuam sem conexão. A ponte antiga aceitava lançamentos sem autenticar o solicitante; a nova versão fecha as rotas públicas de consulta e escrita. O site não grava as chaves de acesso no armazenamento do navegador.
 
 ## Servidor local legado
 
