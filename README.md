@@ -6,7 +6,7 @@ MVP para leitura de prints de ordens de pagamento e geração de sugestões estr
 
 - O menu de contexto seleciona a casa em gestão: Bafo da Prainha, Capiau, Dois de Fevereiro, Casa Porto ou Casa de Apoio CRS.
 - A casa selecionada permanece salva neste navegador e acompanha a revisão do lançamento.
-- Cada casa mantém sessão, catálogos, mapeamentos e controle de duplicidade próprios no servidor interno.
+- A implantação pública conecta apenas o Bafo da Prainha nesta etapa; as outras casas ainda precisam de licenças separadas.
 - A Casa de Apoio CRS está preparada como licença separada para o futuro espelhamento dos rateios em receitas e para a despesa total.
 - Boletos de despesas rateadas da CRS geram uma revisão com quatro receitas, usando cada restaurante como cliente, e uma despesa com o beneficiário como fornecedor. A confirmação fica bloqueada até as quatro receitas somarem exatamente o valor da despesa.
 - O rateio da CRS é fixo: Bafo da Prainha 42%, Casa Porto 20%, Capiau 26% e Dois de Fevereiro 12%.
@@ -14,6 +14,7 @@ MVP para leitura de prints de ordens de pagamento e geração de sugestões estr
 - Gelo, Gás e Carvão: atualizar recorrência em aberto.
 - A imagem é processada localmente no navegador.
 - A primeira integração com o Conta Azul cria somente lançamentos de Banda, sempre após revisão.
+- Quando a chave PIX é um CPF válido, o site consulta fornecedores pelo documento na licença do Bafo e sugere o cadastro encontrado; nomes abreviados também geram sugestões pelo nome. O usuário escolhe o cadastro antes do lançamento.
 
 ## Desenvolvimento
 

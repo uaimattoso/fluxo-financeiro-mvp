@@ -50,6 +50,7 @@ function bridgeRequest(request) {
   const body = request.body || {};
   if (action === 'identity') return { ok:true, company:ca_('/v1/pessoas/conta-conectada') };
   if (action === 'catalogs') return getCatalogs_();
+  if (action === 'findSupplierByCpf') return findSupplierByCpf_(body.cpf);
   if (action === 'mappings') return getMappings_();
   if (action === 'saveMappings') return saveMappings_(body.mappings || {});
   if (action === 'previewPayable') return { ok:true, payload:buildPayable_(body) };
@@ -114,6 +115,25 @@ function getCatalogs_() {
     people: people.items,
     warnings: [accounts.error, categories.error, costCenters.error, people.error].filter(Boolean)
   };
+}
+
+function findSupplierByCpf_(value) {
+  const cpf = String(value || '').replace(/\D/g, '');
+  if (!validCpf_(cpf)) throw new Error('A chave PIX não contém um CPF válido.');
+  const result = ca_('/v1/pessoas?' + query_({pagina:1,tamanho_pagina:10,tipo_perfil:'Fornecedor',documentos:cpf}));
+  const people = list_(result);
+  return {ok:true, people:people};
+}
+
+function validCpf_(cpf) {
+  if (!/^\d{11}$/.test(cpf) || /^(\d)\1{10}$/.test(cpf)) return false;
+  for (let size = 9; size <= 10; size++) {
+    let sum = 0;
+    for (let i = 0; i < size; i++) sum += Number(cpf[i]) * (size + 1 - i);
+    const digit = (sum * 10) % 11 % 10;
+    if (digit !== Number(cpf[size])) return false;
+  }
+  return true;
 }
 
 function catalog_(paths) {
