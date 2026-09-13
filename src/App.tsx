@@ -59,8 +59,8 @@ type CrsEntry = {
   amount: string;
   description: string;
 };
-const API = "http://127.0.0.1:8787/api/ca";
-const AUTH = "http://127.0.0.1:8787/auth/conta-azul";
+const BRIDGE = "https://script.google.com/macros/s/AKfycbxw0xo23_7QDtbz-JOttoog4EN7_9nB7daPNGrw4Z5fywYGZBMqMYLEsYe5IdrVjek/exec";
+const AUTH = BRIDGE + "?action=authorize";
 const blankCatalogs: Catalogs = {
   accounts: [],
   categories: [],
@@ -560,6 +560,49 @@ export function App() {
     [caError, setCaError] = useState(""),
     [review, setReview] = useState<any>(null),
     [created, setCreated] = useState<any>(null);
+  const bridgeFrame = useRef<HTMLIFrameElement>(null);
+  const bridgeTarget = useRef<Window|null>(null);
+  const bridgeNonce = useRef(crypto.randomUUID());
+  const pendingBridge = useRef(new Map<string, {resolve:(value:any)=>void; reject:(reason:Error)=>void}>());
+  const [bridgeOrigin, setBridgeOrigin] = useState("");
+  const [accessKey, setAccessKey] = useState("");
+  const [caUnlocked, setCaUnlocked] = useState(false);
+  const [connectedCompany, setConnectedCompany] = useState("");
+  const [companyChecked, setCompanyChecked] = useState(false);
+  const bridgeCall = (action:string, body:unknown = {}) => new Promise<any>((resolve,reject) => {
+    if (!bridgeOrigin || !bridgeTarget.current) return reject(new Error("Ponte Conta Azul indisponível."));
+    const id = crypto.randomUUID();
+    pendingBridge.current.set(id,{resolve,reject});
+    bridgeTarget.current.postMessage({source:"fluxo-ca-site",nonce:bridgeNonce.current,id,action,body,accessKey},bridgeOrigin);
+    window.setTimeout(() => {
+      const pending=pendingBridge.current.get(id);
+      if(pending){pendingBridge.current.delete(id);pending.reject(new Error("A ponte Conta Azul não respondeu."));}
+    },30000);
+  });
+  useEffect(() => {
+    const receive=(event:MessageEvent) => {
+      if(event.data?.source!=="fluxo-ca-bridge" || event.data.nonce!==bridgeNonce.current)return;
+      if(!/^https:\/\/[a-z0-9-]+\.googleusercontent\.com$/.test(event.origin))return;
+      if(event.data.type==="ready"){
+        bridgeTarget.current=event.source as Window;
+        setBridgeOrigin(event.origin);
+        return;
+      }
+      if(event.source!==bridgeTarget.current)return;
+      if(event.data.type!=="result")return;
+      const pending=pendingBridge.current.get(event.data.id);
+      if(!pending)return;
+      pendingBridge.current.delete(event.data.id);
+      if(event.data.error)pending.reject(new Error(event.data.error));else pending.resolve(event.data.result);
+    };
+    window.addEventListener("message",receive);
+    return()=>window.removeEventListener("message",receive);
+  },[]);
+  useEffect(() => {
+    if(bridgeOrigin)return;
+    const timer=window.setTimeout(()=>setCaError("A ponte Conta Azul não carregou. Atualize a implantação do Apps Script."),12000);
+    return()=>window.clearTimeout(timer);
+  },[bridgeOrigin]);
   const load = async (f: File) => {
     if (!f || (f.type !== "application/pdf" && !f.type.startsWith("image/")))
       return;
@@ -645,39 +688,24 @@ export function App() {
     setCaError("");
     setReview(null);
     setCreated(null);
-    const query = "?house=" + encodeURIComponent(house);
-    fetch(API + "/status" + query)
-      .then((r) => r.json())
-      .then(async (s) => {
-        if (!active) return;
-        setCaStatus(s);
-        if (s.connected) {
-          const [c, m] = await Promise.all([
-            fetch(API + "/catalogs" + query).then((r) => r.json()),
-            fetch(API + "/mappings" + query).then((r) => r.json()),
-          ]);
-          if (!active) return;
-          if (c.ok === false) {
-            setCaError(
-              c.message ||
-                "Não foi possível carregar os cadastros do Conta Azul.",
-            );
-            setCatalogs(blankCatalogs);
-          } else {
-            setCatalogs({ ...blankCatalogs, ...c });
-            if (c.warnings?.length) setCaError(c.warnings.join(" · "));
-          }
-          setMappings({ ...blankMappings, ...m });
-        }
-      })
-      .catch(() => {
-        if (active)
-          setCaError("O servidor interno do Conta Azul não está disponível.");
-      });
+    setCaUnlocked(false);
+    setConnectedCompany("");
+    setCompanyChecked(false);
+    if (house === "Bafo da Prainha" && bridgeOrigin) {
+      bridgeCall("status")
+        .then((status) => {if(active)setCaStatus(status);})
+        .catch((error) => {if(active)setCaError(error.message);});
+    }
     return () => {
       active = false;
     };
-  }, [house]);
+  }, [house, bridgeOrigin]);
+  useEffect(() => {
+    if(house!=="Bafo da Prainha" || !bridgeOrigin)return;
+    const refresh=() => bridgeCall("status").then(setCaStatus).catch(error=>setCaError(error.message));
+    window.addEventListener("focus",refresh);
+    return()=>window.removeEventListener("focus",refresh);
+  },[house,bridgeOrigin]);
   useEffect(() => {
     if (!caStatus.connected || form.kind !== "Banda") return;
     const key = (v: string) =>
@@ -762,30 +790,46 @@ export function App() {
       description: form.description,
     },
   ];
-  const requestCa = async (path: string, options: RequestInit = {}) => {
-    const r = await fetch(API + path, options);
-    const result = await r.json();
-    if (!r.ok || result.ok === false) throw new Error(result.message);
+  const requestCa = async (action: string, body:unknown = {}) => {
+    if(house!=="Bafo da Prainha" || !caUnlocked)throw new Error("Confirme o acesso à licença do Bafo antes de criar.");
+    const result=await bridgeCall(action,body);
+    if(result.ok===false)throw new Error(result.message || "A ponte Conta Azul recusou a operação.");
     return result;
+  };
+  const inspectCa = async () => {
+    setCaBusy(true);setCaError("");
+    try {
+      const identity=await bridgeCall("identity");
+      const company=identity.company || {};
+      setConnectedCompany(String(company.nome_fantasia || company.razao_social || company.nome || company.id_empresa || "Empresa não identificada"));
+      setCompanyChecked(true);
+    } catch(error) {
+      setCaError(error instanceof Error?error.message:"Não foi possível conferir a empresa.");
+    } finally {setCaBusy(false);}
+  };
+  const unlockCa = async () => {
+    setCaBusy(true);setCaError("");
+    try {
+      const [c,m]=await Promise.all([bridgeCall("catalogs"),bridgeCall("mappings")]);
+      setCatalogs({...blankCatalogs,...c});
+      setMappings({...blankMappings,...m});
+      if(c.warnings?.length)setCaError(c.warnings.join(" · "));
+      setCaUnlocked(true);
+    } catch(error) {
+      setCaUnlocked(false);
+      setCaError(error instanceof Error?error.message:"Não foi possível acessar a licença.");
+    } finally {setCaBusy(false);}
   };
   const saveMappings = async (next: Mappings) => {
     setMappings(next);
-    await requestCa("/mappings?house=" + encodeURIComponent(house), {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(next),
-    });
+    await requestCa("saveMappings",{mappings:next});
   };
   const previewCa = async () => {
     setCaBusy(true);
     setCaError("");
     try {
       await saveMappings(mappings);
-      const result = await requestCa("/payables/preview", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ house, form, mappings }),
-      });
+      const result = await requestCa("previewPayable",{form,mappings});
       setReview(result);
     } catch (e) {
       setCaError(
@@ -799,11 +843,7 @@ export function App() {
     setCaBusy(true);
     setCaError("");
     try {
-      const result = await requestCa("/payables", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ house, form, mappings, confirm: true }),
-      });
+      const result = await requestCa("createPayable",{form,mappings,confirm:true});
       setCreated(result);
       setReview(null);
       setStage("done");
@@ -815,6 +855,12 @@ export function App() {
   };
   return (
     <main>
+      <iframe
+        ref={bridgeFrame}
+        title="Ponte segura Conta Azul"
+        src={BRIDGE+"?action=bridge&nonce="+bridgeNonce.current}
+        style={{display:"none"}}
+      />
       <header>
         <div className="brand">
           <div className="brandmark">FL</div>
@@ -839,16 +885,28 @@ export function App() {
             <ChevronDown size={14} />
           </div>
         </label>
-        {caStatus.connected ? (
-          <div className="ca-connected">
-            <ShieldCheck size={15} /> {house} conectada
+        {house!=="Bafo da Prainha" ? (
+          <div className="ca-connected">Integração desta casa pendente</div>
+        ) : caStatus.connected ? (
+          <div className="ca-access">
+            <div className="ca-connected"><ShieldCheck size={15} /> Conta Azul conectada {connectedCompany && "· "+connectedCompany}</div>
+            {!caUnlocked && <><input
+              aria-label="Chave de acesso do Fluxo"
+              type="password"
+              autoComplete="off"
+              placeholder="Chave de acesso do Fluxo"
+              value={accessKey}
+              onChange={e=>setAccessKey(e.target.value)}
+            />{!companyChecked
+              ? <button className="ca-connect" disabled={caBusy || !accessKey} onClick={inspectCa}>Conferir empresa</button>
+              : <button className="ca-connect" disabled={caBusy || connectedCompany==="Empresa não identificada"} onClick={unlockCa}>Confirmar Bafo da Prainha</button>}
+            </>}
           </div>
         ) : (
           <button
             className="ca-connect"
-            onClick={() =>
-              (location.href = AUTH + "?house=" + encodeURIComponent(house))
-            }
+            disabled={!bridgeOrigin}
+            onClick={() => window.open(AUTH,"_blank","noopener,noreferrer")}
           >
             <Link2 size={15} />{" "}
             {caStatus.configured
@@ -857,6 +915,7 @@ export function App() {
           </button>
         )}
       </header>
+      {caError && stage==="empty" && <div className="notice"><AlertTriangle size={18}/><p>{caError}</p></div>}
       <section className="intro">
         <div>
           <p className="eyebrow">
@@ -1134,7 +1193,7 @@ export function App() {
                 <summary>Ver texto lido do print</summary>
                 <pre>{ocrText || "Nenhum texto reconhecido."}</pre>
               </details>
-              {caStatus.connected && !recurring && (
+              {caStatus.connected && caUnlocked && !recurring && (
                 <details className="ca-panel" open>
                   <summary>Vínculos com o Conta Azul</summary>
                   <div className="mapgrid">
@@ -1194,7 +1253,7 @@ export function App() {
                 <div className="success">
                   <Check /> Sugestão confirmada.
                 </div>
-              ) : caStatus.connected && !recurring ? (
+              ) : caStatus.connected && caUnlocked && !recurring ? (
                 <button
                   className="confirm"
                   disabled={caBusy}
@@ -1203,6 +1262,8 @@ export function App() {
                   <CloudUpload size={18} />{" "}
                   {caBusy ? "Preparando..." : "Criar no Conta Azul"}
                 </button>
+              ) : house==="Bafo da Prainha" && !recurring ? (
+                <button className="confirm" disabled>Conecte e acesse a licença para criar</button>
               ) : (
                 <button className="confirm" onClick={() => setStage("done")}>
                   <Check size={18} /> Confirmar sugestão
@@ -1268,3 +1329,4 @@ export function App() {
     </main>
   );
 }
+

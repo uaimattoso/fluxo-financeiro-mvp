@@ -22,8 +22,14 @@ function doGet(e) {
         '<a href="' + url + '" target="_top" style="display:inline-block;background:#164b35;color:white;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:bold">Continuar para o Conta Azul</a></div>'
       );
     }
-    if (p.action === 'catalogs') return json_(getCatalogs_());
-    if (p.action === 'mappings') return json_(getMappings_());
+    if (p.action === 'bridge') {
+      const nonce=String(p.nonce || '');
+      if (!/^[0-9a-f-]{36}$/.test(nonce)) throw new Error('Ponte inválida.');
+      const page=HtmlService.createTemplateFromFile('Bridge');
+      page.nonce=nonce;
+      return page.evaluate()
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    }
     return json_({ ok: true, configured: isConfigured_(), connected: isConnected_(), service: 'Fluxo Conta Azul' });
   } catch (error) {
     return json_({ ok: false, message: error.message });
@@ -31,15 +37,24 @@ function doGet(e) {
 }
 
 function doPost(e) {
-  try {
-    const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    if (body.action === 'saveMappings') return json_(saveMappings_(body.mappings || {}));
-    if (body.action === 'previewPayable') return json_({ ok: true, payload: buildPayable_(body) });
-    if (body.action === 'createPayable') return json_(createPayable_(body));
-    throw new Error('Ação não reconhecida.');
-  } catch (error) {
-    return json_({ ok: false, message: error.message });
-  }
+  return json_({ ok: false, message: 'Use a ponte protegida do Fluxo.' });
+}
+
+function bridgeRequest(request) {
+  const action = String(request && request.action || '');
+  if (action === 'status') return { ok:true, configured:isConfigured_(), connected:isConnected_() };
+  const supplied = String(request && request.accessKey || '');
+  const expected = required_('FLUXO_ACCESS_KEY');
+  if (!supplied || !expected || supplied !== expected) throw new Error('Chave de acesso inválida.');
+  if (!isConnected_()) throw new Error('Conta Azul não conectada.');
+  const body = request.body || {};
+  if (action === 'identity') return { ok:true, company:ca_('/v1/pessoas/conta-conectada') };
+  if (action === 'catalogs') return getCatalogs_();
+  if (action === 'mappings') return getMappings_();
+  if (action === 'saveMappings') return saveMappings_(body.mappings || {});
+  if (action === 'previewPayable') return { ok:true, payload:buildPayable_(body) };
+  if (action === 'createPayable') return createPayable_(body);
+  throw new Error('Ação não reconhecida.');
 }
 
 function getAuthorizationUrl_() {
@@ -122,12 +137,17 @@ function buildPayable_(body) {
 
 function createPayable_(body) {
   if (body.confirm !== true) throw new Error('Confirmação final obrigatória.');
-  const payload = buildPayable_(body), key = digest_(payload), props = PropertiesService.getScriptProperties(), previous = props.getProperty('CREATED_' + key);
-  if (previous) return Object.assign(parse_(previous), { ok:true, duplicatePrevented:true });
-  const result = ca_('/v1/financeiro/eventos-financeiros/contas-a-pagar', 'post', payload);
-  const saved = { ok:true, protocolId:result.protocolo || result.protocolId || result.id || '', status:result.status || 'PROCESSANDO', createdAt:result.data_criacao || result.createdAt || new Date().toISOString() };
-  props.setProperty('CREATED_' + key, JSON.stringify(saved));
-  return saved;
+  const payload = buildPayable_(body), key = digest_(payload), props = PropertiesService.getScriptProperties();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const previous = props.getProperty('CREATED_' + key);
+    if (previous) return Object.assign(parse_(previous), { ok:true, duplicatePrevented:true });
+    const result = ca_('/v1/financeiro/eventos-financeiros/contas-a-pagar', 'post', payload);
+    const saved = { ok:true, protocolId:result.protocolo || result.protocolId || result.id || '', status:result.status || 'PROCESSANDO', createdAt:result.data_criacao || result.createdAt || new Date().toISOString() };
+    props.setProperty('CREATED_' + key, JSON.stringify(saved));
+    return saved;
+  } finally { lock.releaseLock(); }
 }
 
 function getMappings_(){ return parse_(PropertiesService.getScriptProperties().getProperty('FLUXO_MAPPINGS') || '{}'); }
@@ -144,3 +164,4 @@ function list_(value){ const raw=Array.isArray(value)?value:(value.items||value.
 function money_(value){ return Number(String(value).replace(/\./g,'').replace(',','.')); }
 function iso_(value){ const p=String(value).split('/'); return p[2]+'-'+p[1]+'-'+p[0]; }
 function digest_(value){ const bytes=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, JSON.stringify(value)); return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/,'').slice(0,32); }
+
