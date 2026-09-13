@@ -40,6 +40,7 @@ type Form = {
   pix: string;
 };
 type Option = { id: string; name: string };
+type CpfLookup = { cpf: string; people: Option[]; loading: boolean; error: string };
 type Catalogs = {
   accounts: Option[];
   categories: Option[];
@@ -86,6 +87,18 @@ const empty: Form = {
   pix: "",
 };
 const PARSER_VERSION = 13;
+const digits = (value: string) => value.replace(/\D/g, "");
+function validCpf(value: string) {
+  const cpf = digits(value);
+  if (!/^\d{11}$/.test(cpf) || /^(\d)\1{10}$/.test(cpf)) return false;
+  for (let size = 9; size <= 10; size++) {
+    let sum = 0;
+    for (let i = 0; i < size; i++) sum += Number(cpf[i]) * (size + 1 - i);
+    if ((sum * 10) % 11 % 10 !== Number(cpf[size])) return false;
+  }
+  return true;
+}
+const nameKey = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLocaleLowerCase("pt-BR");
 const HOUSES: House[] = [
   "Bafo da Prainha",
   "Capiau",
@@ -566,6 +579,7 @@ export function App() {
   const pendingBridge = useRef(new Map<string, {resolve:(value:any)=>void; reject:(reason:Error)=>void}>());
   const [bridgeOrigin, setBridgeOrigin] = useState("");
   const [accessKey, setAccessKey] = useState("");
+  const [cpfLookup, setCpfLookup] = useState<CpfLookup>({cpf:"",people:[],loading:false,error:""});
   const [caUnlocked, setCaUnlocked] = useState(false);
   const [connectedCompany, setConnectedCompany] = useState("");
   const [companyChecked, setCompanyChecked] = useState(false);
@@ -708,34 +722,43 @@ export function App() {
   },[house,bridgeOrigin]);
   useEffect(() => {
     if (!caStatus.connected || form.kind !== "Banda") return;
-    const key = (v: string) =>
-      v
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .trim()
-        .toLocaleLowerCase("pt-BR");
-    const person = catalogs.people.find(
-      (x) => key(x.name) === key(form.supplier),
-    );
     const category = catalogs.categories.find(
-      (x) => key(x.name) === "couvert artistico",
+      (x) => nameKey(x.name) === "couvert artistico",
     );
     const account = catalogs.accounts.find((x) =>
-      key(x.name).startsWith("1.banco safra - conta corrente"),
+      nameKey(x.name).startsWith("1.banco safra - conta corrente"),
     );
     setMappings((current) => {
       const next = {
         ...current,
-        contactId: person?.id || "",
         categoryId: category?.id || "",
         accountId: account?.id || "",
         costCenterId: "",
       };
       return JSON.stringify(next) === JSON.stringify(current) ? current : next;
     });
-  }, [form.supplier, form.kind, catalogs, caStatus.connected]);
-  const update = (k: keyof Form, v: string) =>
+  }, [form.kind, catalogs, caStatus.connected]);
+  useEffect(() => {
+    const cpf = digits(form.pix);
+    if (!caUnlocked || form.kind !== "Banda" || !validCpf(cpf)) {
+      setCpfLookup({cpf:"",people:[],loading:false,error:""});
+      return;
+    }
+    let active = true;
+    setCpfLookup({cpf,people:[],loading:true,error:""});
+    bridgeCall("findSupplierByCpf",{cpf})
+      .then((result) => { if(active)setCpfLookup({cpf,people:result.people || [],loading:false,error:""}); })
+      .catch(() => { if(active)setCpfLookup({cpf,people:[],loading:false,error:"Não foi possível consultar o CPF no Conta Azul."}); });
+    return () => { active = false; };
+  }, [form.pix, form.kind, caUnlocked]);
+  const cpf = digits(form.pix);
+  const supplierSuggestions = validCpf(cpf)
+    ? (cpfLookup.cpf === cpf ? cpfLookup.people : [])
+    : catalogs.people.filter((person) => nameKey(person.name).startsWith(nameKey(form.supplier)) && form.supplier.trim().length >= 4).slice(0,5);
+  const update = (k: keyof Form, v: string) => {
+    if (k === "supplier" || k === "pix") setMappings((x) => ({...x,contactId:""}));
     setForm((x) => ({ ...x, [k]: v }));
+  };
   const reset = () => {
     setFile(null);
     setPreview("");
@@ -1200,11 +1223,20 @@ export function App() {
                     <MapSelect
                       label="Favorecido no Conta Azul"
                       value={mappings.contactId}
-                      items={catalogs.people}
+                      items={[...catalogs.people,...supplierSuggestions.filter((candidate) => !catalogs.people.some((person) => person.id === candidate.id))]}
                       onChange={(v) =>
                         setMappings((x) => ({ ...x, contactId: v }))
                       }
                     />
+                    {cpfLookup.loading && <p>Consultando CPF da chave PIX no Conta Azul...</p>}
+                    {cpfLookup.error && <p>{cpfLookup.error}</p>}
+                    {validCpf(cpf) && !cpfLookup.loading && cpfLookup.cpf === cpf && !supplierSuggestions.length && <p>Nenhum fornecedor encontrado por esse CPF. Escolha o cadastro manualmente.</p>}
+                    {!!supplierSuggestions.length && <div className="supplier-suggestions">
+                      <strong>{validCpf(cpf) ? "Cadastro encontrado pelo CPF do PIX" : "Possíveis cadastros pelo nome"}</strong>
+                      {supplierSuggestions.map((person) => <button key={person.id} type="button" onClick={() => setMappings((x) => ({...x,contactId:person.id}))}>
+                        {person.name}{mappings.contactId === person.id ? " ✓ Selecionado" : " · Usar este cadastro"}
+                      </button>)}
+                    </div>}
                     <MapSelect
                       label="Categoria"
                       value={mappings.categoryId}
