@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+  <head><base target="_top"></head>
+  <body>
+    <script>
+      (function () {
+        const allowed = new Set(['https://uaimattoso.github.io', 'http://127.0.0.1:5173', 'http://localhost:5173']);
+        const nonce = <?!= JSON.stringify(nonce) ?>;
+        const announce = function () {
+          for (const origin of allowed) window.top.postMessage({source:'fluxo-ca-bridge',type:'ready',nonce},origin);
+        };
+        const timer = window.setInterval(announce, 1000);
+        announce();
+        window.addEventListener('message', function (event) {
+          const request = event.data || {};
+          if (!allowed.has(event.origin) || request.source !== 'fluxo-ca-site' || request.nonce !== nonce) return;
+          window.clearInterval(timer);
+          google.script.run
+            .withSuccessHandler(function (result) { event.source.postMessage({source:'fluxo-ca-bridge',type:'result',nonce,id:request.id,result},event.origin); })
+            .withFailureHandler(function (error) { event.source.postMessage({source:'fluxo-ca-bridge',type:'result',nonce,id:request.id,error:error.message || String(error)},event.origin); })
+            .bridgeRequest({action:request.action,body:request.body,accessKey:request.accessKey});
+        });
+      }());
+    </script>
+  </body>
+</html>
+
