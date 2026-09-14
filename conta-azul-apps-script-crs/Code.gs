@@ -127,7 +127,7 @@ function rateio_(body) {
   const weights = [42,20,26,12];
   const total = cents_(f.amount);
   if (total <= 0 || !/^\d{2}\/\d{2}\/\d{4}$/.test(String(f.payment)) || !/^\d{2}\/\d{2}\/\d{4}$/.test(String(f.competence))) throw new Error('Confira valor, vencimento e competência.');
-  if (!String(f.supplier || '').trim() || !String(f.description || '').trim()) throw new Error('Informe fornecedor e descrição da despesa.');
+  if (!String(f.description || '').trim()) throw new Error('Informe a descrição da despesa.');
   if (!m.accountId || !m.payableCategoryId || !m.supplierId) throw new Error('Selecione conta financeira, categoria da despesa e fornecedor no Conta Azul.');
   const result = [];
   let used = 0;
@@ -138,9 +138,9 @@ function rateio_(body) {
     if (!contact) throw new Error('Selecione o cliente da receita: ' + names[i]);
     const category = m.receivableCategoryIds && m.receivableCategoryIds[names[i]];
     if (!category) throw new Error('Selecione a categoria ' + categories[i]);
-    result.push({type:'Receita',party:names[i],cents:value,payload:event_(value, f, contact, m.accountId, category, 'Rateio ' + (f.category || 'Benefício Cidadania') + ' - ' + names[i], 'BOLETO_BANCARIO')});
+    result.push({type:'Receita',party:names[i],cents:value,payload:event_(value, f, contact, m.accountId, category, 'Rateio Benefício Cidadania - ' + names[i], 'BOLETO_BANCARIO')});
   }
-  result.push({type:'Despesa',party:String(f.supplier),cents:total,payload:event_(total, f, m.supplierId, m.accountId, m.payableCategoryId, String(f.description), 'BOLETO_BANCARIO')});
+  result.push({type:'Despesa',party:'Shalom',cents:total,payload:event_(total, f, m.supplierId, m.accountId, m.payableCategoryId, String(f.description), 'BOLETO_BANCARIO')});
   return result;
 }
 
@@ -152,8 +152,10 @@ function validateRateioMappings_(body) {
   const equal=function(a,b){return String(a).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase()===String(b).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();};
   const fixedAccounts=c.accounts.filter(function(x){return equal(x.name,'1.Banco Safra - Conta Corrente');});
   if (fixedAccounts.length!==1 || fixedAccounts[0].id!==m.accountId) throw new Error('A conta financeira da CRS deve ser 1.Banco Safra - Conta Corrente.');
-  if (!c.categories.some(function(x){return x.id===m.payableCategoryId;})) throw new Error('Escolha uma categoria válida para a despesa.');
-  if (!c.suppliers.some(function(x){return x.id===m.supplierId;})) throw new Error('Escolha o cadastro do fornecedor na CRS.');
+  const payableCategories=c.categories.filter(function(x){return equal(x.name,'Benefício Cidadania');});
+  if (payableCategories.length!==1 || payableCategories[0].id!==m.payableCategoryId) throw new Error('A categoria da despesa da Shalom deve ser Benefício Cidadania.');
+  const shalomSuppliers=c.suppliers.filter(function(x){return /^SHALOM(?:\b|\s|[,.-])/.test(String(x.name).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase());});
+  if (shalomSuppliers.length!==1 || shalomSuppliers[0].id!==m.supplierId) throw new Error('O fornecedor da despesa deve ser o cadastro único da Shalom na CRS.');
   for (let i=0;i<names.length;i++) {
     if (!c.clients.some(function(x){return x.id===(m.clientIds || {})[names[i]] && equal(x.name,clients[i]);})) throw new Error('Confira o cliente ' + clients[i] + '.');
     if (!c.categories.some(function(x){return x.id===(m.receivableCategoryIds || {})[names[i]] && equal(x.name,categories[i]);})) throw new Error('Confira a categoria ' + categories[i] + '.');
