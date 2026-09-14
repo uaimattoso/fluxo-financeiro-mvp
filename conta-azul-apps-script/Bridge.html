@@ -6,13 +6,14 @@
       (function () {
         const allowed = new Set(['https://uaimattoso.github.io', 'http://127.0.0.1:5173', 'http://localhost:5173']);
         const nonce = <?!= JSON.stringify(nonce) ?>;
+        const parent = window.top.opener || window.opener || window.top;
         const announce = function () {
-          window.top.postMessage({ source: 'fluxo-ca-bridge', type: 'ready', nonce: nonce }, '*');
+          for (const origin of allowed) parent.postMessage({ source: 'fluxo-ca-bridge', type: 'ready', nonce: nonce }, origin);
         };
         announce();
         const readyTimer = window.setInterval(announce, 1000);
         window.addEventListener('message', function (event) {
-          if (!allowed.has(event.origin) || event.source !== window.top) return;
+          if (!allowed.has(event.origin) || event.source !== parent) return;
           const request = event.data;
           if (!request || request.source !== 'fluxo-ca-site' || request.nonce !== nonce || typeof request.id !== 'string') return;
           window.clearInterval(readyTimer);

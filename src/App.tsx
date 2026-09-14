@@ -631,6 +631,7 @@ export function App() {
   const [crsMappings,setCrsMappings] = useState<CrsMappings>(blankCrsMappings);
   const [crsResults,setCrsResults] = useState<any[]>([]);
   const bridgeTarget = useRef<Partial<Record<ConnectedHouse, Window>>>({});
+  const bridgePopup = useRef<Partial<Record<ConnectedHouse, Window>>>({});
   const bridgeNonce = useRef<Record<ConnectedHouse, string>>({
     "Bafo da Prainha": crypto.randomUUID(),
     "Casa de Apoio CRS": crypto.randomUUID(),
@@ -657,12 +658,25 @@ export function App() {
       if(pending){pendingBridge.current.delete(id);pending.reject(new Error("A ponte Conta Azul não respondeu."));}
     },30000);
   });
+  const openBridge = () => {
+    if (!hasBridge(house)) return;
+    const url = BRIDGES[house]+"?action=bridge&nonce="+bridgeNonce.current[house];
+    const popup = window.open(url,"fluxo-ca-"+house.replace(/[^a-z]/gi,""),"width=560,height=640");
+    if (!popup) {
+      setCaError("O navegador bloqueou a janela da Conta Azul. Permita pop-ups para este site e tente novamente.");
+      return;
+    }
+    bridgePopup.current[house]=popup;
+    setCaError("");
+  };
   useEffect(() => {
     const receive=(event:MessageEvent) => {
       if(event.data?.source!=="fluxo-ca-bridge")return;
       const targetHouse=CONNECTED_HOUSES.find((candidate)=>bridgeNonce.current[candidate]===event.data.nonce);
       if(!targetHouse)return;
       if(!/^https:\/\/[a-z0-9-]+\.googleusercontent\.com$/.test(event.origin))return;
+      const iframe = document.querySelector<HTMLIFrameElement>(`iframe[data-bridge="${targetHouse}"]`);
+      if(event.source!==iframe?.contentWindow && event.source!==bridgePopup.current[targetHouse])return;
       if(event.data.type==="ready"){
         bridgeTarget.current[targetHouse]=event.source as Window;
         setBridgeOrigins((current)=>current[targetHouse]===event.origin?current:{...current,[targetHouse]:event.origin});
@@ -680,7 +694,7 @@ export function App() {
   },[]);
   useEffect(() => {
     if(!hasBridge(house) || bridgeOrigin)return;
-    const timer=window.setTimeout(()=>setCaError("A ponte Conta Azul não carregou. Atualize a implantação do Apps Script."),12000);
+    const timer=window.setTimeout(()=>setCaError("A conexão da Conta Azul foi bloqueada neste navegador. Abra a ponte em uma janela própria para continuar."),12000);
     return()=>window.clearTimeout(timer);
   },[house,bridgeOrigin]);
   const load = async (f: File) => {
@@ -987,6 +1001,7 @@ export function App() {
     <main>
       {CONNECTED_HOUSES.map((connectedHouse)=><iframe
         key={connectedHouse}
+        data-bridge={connectedHouse}
         title={"Ponte Conta Azul — "+connectedHouse}
         src={BRIDGES[connectedHouse]+"?action=bridge&nonce="+bridgeNonce.current[connectedHouse]}
         style={{display:"none"}}
@@ -1035,11 +1050,10 @@ export function App() {
         ) : (
           <button
             className="ca-connect"
-            disabled={!bridgeOrigin}
-            onClick={() => window.open(BRIDGES[house]+"?action=authorize","_blank","noopener,noreferrer")}
+            onClick={bridgeOrigin ? () => window.open(BRIDGES[house]+"?action=authorize","_blank","noopener,noreferrer") : openBridge}
           >
             <Link2 size={15} />{" "}
-            {caStatus.configured
+            {!bridgeOrigin ? "Abrir conexão Conta Azul" : caStatus.configured
               ? "Conectar " + house
               : "Configurar Conta Azul"}
           </button>
