@@ -6,7 +6,7 @@
       (function () {
         const allowed = new Set(['https://uaimattoso.github.io', 'http://127.0.0.1:5173', 'http://localhost:5173']);
         const nonce = <?!= JSON.stringify(nonce) ?>;
-        const parent = window.opener || window.top;
+        const parent = window.top.opener || window.opener || window.top;
         const announce = function () {
           for (const origin of allowed) parent.postMessage({ source: 'fluxo-ca-bridge', type: 'ready', nonce: nonce }, origin);
         };
