@@ -60,6 +60,24 @@ type CrsEntry = {
   amount: string;
   description: string;
 };
+type CrsCatalogs = { accounts: Option[]; categories: Option[]; clients: Option[]; suppliers: Option[] };
+type CrsMappings = { accountId: string; receivableCategoryIds: Record<string,string>; payableCategoryId: string; supplierId: string; clientIds: Record<string,string> };
+const blankCrsCatalogs: CrsCatalogs = {accounts:[],categories:[],clients:[],suppliers:[]};
+const blankCrsMappings: CrsMappings = {accountId:"",receivableCategoryIds:{},payableCategoryId:"",supplierId:"",clientIds:{}};
+const CRS_CLIENT_NAMES: Record<Restaurant,string> = {
+  'Bafo da Prainha':'BAFO DA PRAINHA',
+  'Casa Porto':'CASA PORTO',
+  'Capiau':'O TORRESMEIRO (Capiau)',
+  'Dois de Fevereiro':'TASCARIA (2 de Fevereiro)',
+};
+const CRS_CATEGORY_NAMES: Record<Restaurant,string> = {
+  'Bafo da Prainha':'Recebíveis - Bafo',
+  'Casa Porto':'Recebíveis - Casa Porto',
+  'Capiau':'Recebíveis - Capiau',
+  'Dois de Fevereiro':'Recebíveis - Dois de Fevereiro',
+};
+const sameCaName=(left:string,right:string)=>left.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase()===right.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
+const uniqueCaMatch=(items:Option[],name:string)=>{const hits=items.filter(item=>sameCaName(item.name,name));return hits.length===1?hits[0].id:'';};
 const BRIDGES = {
   "Bafo da Prainha": "https://script.google.com/macros/s/AKfycbxw0xo23_7QDtbz-JOttoog4EN7_9nB7daPNGrw4Z5fywYGZBMqMYLEsYe5IdrVjek/exec",
   "Casa de Apoio CRS": "https://script.google.com/macros/s/AKfycbw7-WplZr-2N6pu76966H18o5DpyDNw2sR8No2ASCO9IdM8ZUXzMG_zg05M3VnV-Xh1/exec",
@@ -405,7 +423,14 @@ function CrsReview({
   allocatedCents,
   balanced,
   done,
-  onConfirm,
+  catalogs,
+  mappings,
+  onMappings,
+  busy,
+  connected,
+  onPrepare,
+  error,
+  results,
 }: {
   form: Form;
   update: (key: keyof Form, value: string) => void;
@@ -415,7 +440,14 @@ function CrsReview({
   allocatedCents: number;
   balanced: boolean;
   done: boolean;
-  onConfirm: () => void;
+  catalogs: CrsCatalogs;
+  mappings: CrsMappings;
+  onMappings: (value: CrsMappings) => void;
+  busy: boolean;
+  connected: boolean;
+  onPrepare: () => void;
+  error: string;
+  results: any[];
 }) {
   return (
     <div className="suggestion crs-review">
@@ -525,18 +557,30 @@ function CrsReview({
           {balanced ? <Check /> : <AlertTriangle />} Receitas = despesa
         </span>
       </div>
-      <p className="crs-note">Esta é uma simulação. Nenhuma receita ou despesa é enviada à Conta Azul nesta etapa.</p>
+      {connected && !done && <details className="ca-panel" open>
+        <summary>Vínculos dos cinco lançamentos na Conta Azul da CRS</summary>
+        <div className="mapgrid">
+          <MapSelect label="Conta financeira" value={mappings.accountId} items={catalogs.accounts} onChange={(v)=>onMappings({...mappings,accountId:v})}/>
+          {RESTAURANTS.map((restaurant)=><MapSelect key={'category-'+restaurant} label={'Categoria: '+CRS_CATEGORY_NAMES[restaurant]} value={mappings.receivableCategoryIds[restaurant] || ''} items={catalogs.categories} onChange={(v)=>onMappings({...mappings,receivableCategoryIds:{...mappings.receivableCategoryIds,[restaurant]:v}})}/>)}
+          <MapSelect label="Categoria da despesa" value={mappings.payableCategoryId} items={catalogs.categories} onChange={(v)=>onMappings({...mappings,payableCategoryId:v})}/>
+          {RESTAURANTS.map((restaurant)=><MapSelect key={restaurant} label={'Cliente: '+CRS_CLIENT_NAMES[restaurant]} value={mappings.clientIds[restaurant] || ''} items={catalogs.clients} onChange={(v)=>onMappings({...mappings,clientIds:{...mappings.clientIds,[restaurant]:v}})}/>)}
+          <MapSelect label="Fornecedor da despesa" value={mappings.supplierId} items={catalogs.suppliers} onChange={(v)=>onMappings({...mappings,supplierId:v})}/>
+        </div>
+      </details>}
+      {!connected && <p className="crs-note">Conecte e confira a licença da CRS para enviar os lançamentos.</p>}
+      {error && <div className="notice"><AlertTriangle size={18}/><div><strong>Conta Azul</strong><p>{error}</p></div></div>}
+      {!!results.length && <div className="flow-checks">{results.map((item,index)=><span key={index}>{item.type} · {item.party}: {item.status} {item.protocolId && '· '+item.protocolId}</span>)}</div>}
       {done ? (
         <div className="success">
-          <Check /> Revisão dos cinco lançamentos confirmada.
+          <Check /> Envio dos cinco lançamentos solicitado à Conta Azul.
         </div>
       ) : (
         <button
           className="confirm"
-          disabled={!balanced || !form.supplier || !form.payment}
-          onClick={onConfirm}
+          disabled={busy || !connected || !balanced || !form.supplier || !form.payment}
+          onClick={onPrepare}
         >
-          <Check /> Confirmar revisão dos 5 lançamentos
+          <CloudUpload /> {busy ? 'Preparando...' : 'Revisar envio à Conta Azul'}
         </button>
       )}
     </div>
@@ -579,6 +623,9 @@ export function App() {
     [caError, setCaError] = useState(""),
     [review, setReview] = useState<any>(null),
     [created, setCreated] = useState<any>(null);
+  const [crsCatalogs,setCrsCatalogs] = useState<CrsCatalogs>(blankCrsCatalogs);
+  const [crsMappings,setCrsMappings] = useState<CrsMappings>(blankCrsMappings);
+  const [crsResults,setCrsResults] = useState<any[]>([]);
   const bridgeTarget = useRef<Partial<Record<ConnectedHouse, Window>>>({});
   const bridgeNonce = useRef<Record<ConnectedHouse, string>>({
     "Bafo da Prainha": crypto.randomUUID(),
@@ -641,6 +688,9 @@ export function App() {
     setWarnings([]);
     setProgress(0);
     setCreated(null);
+    setCrsCatalogs(blankCrsCatalogs);
+    setCrsMappings(blankCrsMappings);
+    setCrsResults([]);
     setReview(null);
     setAllocations({
       "Bafo da Prainha": "",
@@ -839,8 +889,26 @@ export function App() {
     try {
       const identity=await bridgeCall("identity");
       const company=identity.company || {};
-      setConnectedCompany(String(company.nome_fantasia || company.razao_social || company.nome || company.id_empresa || "Empresa não identificada"));
+      const name=String(company.nome_fantasia || company.razao_social || company.nome || company.id_empresa || "Empresa não identificada");
+      if (house==="Casa de Apoio CRS" && !['FIRMA CARIOCA DE BALCAO','CRS SERVICO DE APOIO ADMINISTRATIVO LTDA'].includes(name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase())) throw new Error('A licença conectada não corresponde à CRS. Confira a empresa no Conta Azul.');
+      setConnectedCompany(name);
       setCompanyChecked(true);
+      if (house==="Casa de Apoio CRS") {
+        const loaded=await bridgeCall("catalogs");
+        setCrsCatalogs({...blankCrsCatalogs,...loaded});
+        const clientIds:Record<string,string>={},receivableCategoryIds:Record<string,string>={};
+        RESTAURANTS.forEach((restaurant)=>{
+          clientIds[restaurant]=uniqueCaMatch(loaded.clients || [],CRS_CLIENT_NAMES[restaurant]);
+          receivableCategoryIds[restaurant]=uniqueCaMatch(loaded.categories || [],CRS_CATEGORY_NAMES[restaurant]);
+        });
+        setCrsMappings({
+          ...blankCrsMappings,
+          accountId:(loaded.accounts || []).length===1 ? loaded.accounts[0].id : '',
+          payableCategoryId:uniqueCaMatch(loaded.categories || [],form.category),
+          supplierId:uniqueCaMatch(loaded.suppliers || [],form.supplier),
+          clientIds,receivableCategoryIds,
+        });
+      }
     } catch(error) {
       setCaError(error instanceof Error?error.message:"Não foi possível conferir a empresa.");
     } finally {setCaBusy(false);}
@@ -890,6 +958,26 @@ export function App() {
     } finally {
       setCaBusy(false);
     }
+  };
+  const previewCrs = async () => {
+    setCaBusy(true);setCaError('');
+    try {
+      const result=await bridgeCall('previewRateio',{form,mappings:crsMappings});
+      if(result.ok===false)throw new Error(result.message || 'Revise os vínculos.');
+      setReview({kind:'crs',entries:result.entries});
+    } catch(e) {setCaError(e instanceof Error?e.message:'Não foi possível preparar o rateio.');}
+    finally {setCaBusy(false);}
+  };
+  const createCrs = async () => {
+    setCaBusy(true);setCaError('');
+    try {
+      const result=await bridgeCall('createRateio',{form,mappings:crsMappings,confirm:true});
+      setCrsResults(result.results || []);
+      setReview(null);
+      if(result.ok===false)throw new Error(result.message || 'Envio parcial. Confira os protocolos.');
+      setStage('done');
+    } catch(e) {setCaError(e instanceof Error?e.message:'Não foi possível enviar o rateio.');}
+    finally {setCaBusy(false);}
   };
   return (
     <main>
@@ -1115,7 +1203,14 @@ export function App() {
               allocatedCents={allocatedCents}
               balanced={allocationBalanced}
               done={stage === "done"}
-              onConfirm={() => setStage("done")}
+              catalogs={crsCatalogs}
+              mappings={crsMappings}
+              onMappings={setCrsMappings}
+              busy={caBusy}
+              connected={house==='Casa de Apoio CRS' && companyChecked && caStatus.connected}
+              onPrepare={previewCrs}
+              error={caError}
+              results={crsResults}
             />
           ) : (
             <div className="suggestion">
@@ -1331,9 +1426,9 @@ export function App() {
             </span>
             <h2>Confirmar criação no Conta Azul</h2>
             <p>
-              Revise antes do envio. Depois de confirmar, o lançamento será
-              criado de verdade.
+              Revise antes do envio. Depois de confirmar, {review.kind==='crs' ? 'os cinco lançamentos serão enviados de verdade.' : 'o lançamento será criado de verdade.'}
             </p>
+            {review.kind==='crs' ? <dl>{review.entries.map((entry:any,index:number)=><div key={index}><dt>{index+1}. {entry.type} · {entry.party}</dt><dd>R$ {(entry.cents/100).toLocaleString('pt-BR',{minimumFractionDigits:2})} · {entry.type==='Receita' ? CRS_CLIENT_NAMES[entry.party as Restaurant] : crsCatalogs.suppliers.find(x=>x.id===crsMappings.supplierId)?.name} · {crsCatalogs.categories.find(x=>x.id===entry.payload.rateio[0].id_categoria)?.name}</dd></div>)}<div><dt>Licença</dt><dd>{connectedCompany} (CRS)</dd></div><div><dt>Vencimento</dt><dd>{form.payment}</dd></div></dl> :
             <dl>
               <div>
                 <dt>Casa</dt>
@@ -1359,10 +1454,10 @@ export function App() {
                 <dt>Descrição</dt>
                 <dd>{form.description}</dd>
               </div>
-            </dl>
+            </dl>}
             <div className="modalactions">
               <button onClick={() => setReview(null)}>Voltar e revisar</button>
-              <button className="confirm" disabled={caBusy} onClick={createCa}>
+              <button className="confirm" disabled={caBusy} onClick={review.kind==='crs' ? createCrs : createCa}>
                 {caBusy ? "Enviando..." : "Confirmar e criar"}
               </button>
             </div>
