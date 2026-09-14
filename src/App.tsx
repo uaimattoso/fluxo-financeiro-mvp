@@ -631,7 +631,6 @@ export function App() {
   const [crsMappings,setCrsMappings] = useState<CrsMappings>(blankCrsMappings);
   const [crsResults,setCrsResults] = useState<any[]>([]);
   const bridgeTarget = useRef<Partial<Record<ConnectedHouse, Window>>>({});
-  const bridgePopup = useRef<Partial<Record<ConnectedHouse, Window>>>({});
   const bridgeNonce = useRef<Record<ConnectedHouse, string>>({
     "Bafo da Prainha": crypto.randomUUID(),
     "Casa de Apoio CRS": crypto.randomUUID(),
@@ -666,7 +665,6 @@ export function App() {
       setCaError("O navegador bloqueou a janela da Conta Azul. Permita pop-ups para este site e tente novamente.");
       return;
     }
-    bridgePopup.current[house]=popup;
     setCaError("");
   };
   useEffect(() => {
@@ -675,8 +673,6 @@ export function App() {
       const targetHouse=CONNECTED_HOUSES.find((candidate)=>bridgeNonce.current[candidate]===event.data.nonce);
       if(!targetHouse)return;
       if(!/^https:\/\/[a-z0-9-]+\.googleusercontent\.com$/.test(event.origin))return;
-      const iframe = document.querySelector<HTMLIFrameElement>(`iframe[data-bridge="${targetHouse}"]`);
-      if(event.source!==iframe?.contentWindow && event.source!==bridgePopup.current[targetHouse])return;
       if(event.data.type==="ready"){
         bridgeTarget.current[targetHouse]=event.source as Window;
         setBridgeOrigins((current)=>current[targetHouse]===event.origin?current:{...current,[targetHouse]:event.origin});
@@ -1001,7 +997,6 @@ export function App() {
     <main>
       {CONNECTED_HOUSES.map((connectedHouse)=><iframe
         key={connectedHouse}
-        data-bridge={connectedHouse}
         title={"Ponte Conta Azul — "+connectedHouse}
         src={BRIDGES[connectedHouse]+"?action=bridge&nonce="+bridgeNonce.current[connectedHouse]}
         style={{display:"none"}}
