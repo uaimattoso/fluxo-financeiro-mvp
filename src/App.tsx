@@ -65,6 +65,8 @@ type CrsMappings = { accountId: string; receivableCategoryIds: Record<string,str
 const blankCrsCatalogs: CrsCatalogs = {accounts:[],categories:[],clients:[],suppliers:[]};
 const blankCrsMappings: CrsMappings = {accountId:"",receivableCategoryIds:{},payableCategoryId:"",supplierId:"",clientIds:{}};
 const CRS_FIXED_ACCOUNT = '1.Banco Safra - Conta Corrente';
+const CRS_FIXED_PAYABLE_CATEGORY = 'Benefício Cidadania';
+const CRS_FIXED_SUPPLIER = 'Shalom';
 const CRS_CLIENT_NAMES: Record<Restaurant,string> = {
   'Bafo da Prainha':'BAFO DA PRAINHA',
   'Casa Porto':'CASA PORTO',
@@ -79,6 +81,7 @@ const CRS_CATEGORY_NAMES: Record<Restaurant,string> = {
 };
 const sameCaName=(left:string,right:string)=>left.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase()===right.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
 const uniqueCaMatch=(items:Option[],name:string)=>{const hits=items.filter(item=>sameCaName(item.name,name));return hits.length===1?hits[0].id:'';};
+const uniqueShalomMatch=(items:Option[])=>{const hits=items.filter(item=>/^SHALOM(?:\b|\s|[,.-])/.test(item.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase()));return hits.length===1?hits[0].id:'';};
 const BRIDGES = {
   "Bafo da Prainha": "https://script.google.com/macros/s/AKfycbxw0xo23_7QDtbz-JOttoog4EN7_9nB7daPNGrw4Z5fywYGZBMqMYLEsYe5IdrVjek/exec",
   "Casa de Apoio CRS": "https://script.google.com/macros/s/AKfycbw7-WplZr-2N6pu76966H18o5DpyDNw2sR8No2ASCO9IdM8ZUXzMG_zg05M3VnV-Xh1/exec",
@@ -468,8 +471,9 @@ function CrsReview({
       <div className="formgrid">
         <Field
           label="Fornecedor da despesa"
-          value={form.supplier}
-          onChange={(v) => update("supplier", v)}
+          value={CRS_FIXED_SUPPLIER}
+          onChange={()=>{}}
+          readOnly
           wide
         />
         <Field
@@ -487,11 +491,7 @@ function CrsReview({
           value={form.competence}
           onChange={(v) => update("competence", v)}
         />
-        <Field
-          label="Categoria"
-          value={form.category}
-          onChange={(v) => update("category", v)}
-        />
+        <Field label="Categoria da despesa" value={CRS_FIXED_PAYABLE_CATEGORY} onChange={()=>{}} readOnly/>
         <Field
           label="Descrição da despesa"
           value={form.description}
@@ -563,13 +563,15 @@ function CrsReview({
         <div className="mapgrid">
           <Field label="Conta financeira fixa" value={CRS_FIXED_ACCOUNT} onChange={()=>{}} readOnly/>
           {RESTAURANTS.map((restaurant)=><MapSelect key={'category-'+restaurant} label={'Categoria: '+CRS_CATEGORY_NAMES[restaurant]} value={mappings.receivableCategoryIds[restaurant] || ''} items={catalogs.categories} onChange={(v)=>onMappings({...mappings,receivableCategoryIds:{...mappings.receivableCategoryIds,[restaurant]:v}})}/>)}
-          <MapSelect label="Categoria da despesa" value={mappings.payableCategoryId} items={catalogs.categories} onChange={(v)=>onMappings({...mappings,payableCategoryId:v})}/>
+          <Field label="Categoria da despesa fixa" value={CRS_FIXED_PAYABLE_CATEGORY} onChange={()=>{}} readOnly/>
           {RESTAURANTS.map((restaurant)=><MapSelect key={restaurant} label={'Cliente: '+CRS_CLIENT_NAMES[restaurant]} value={mappings.clientIds[restaurant] || ''} items={catalogs.clients} onChange={(v)=>onMappings({...mappings,clientIds:{...mappings.clientIds,[restaurant]:v}})}/>)}
-          <MapSelect label="Fornecedor da despesa" value={mappings.supplierId} items={catalogs.suppliers} onChange={(v)=>onMappings({...mappings,supplierId:v})}/>
+          <Field label="Fornecedor fixo" value={catalogs.suppliers.find(x=>x.id===mappings.supplierId)?.name || CRS_FIXED_SUPPLIER} onChange={()=>{}} readOnly/>
         </div>
       </details>}
       {!connected && <p className="crs-note">Conecte e confira a licença da CRS para enviar os lançamentos.</p>}
       {connected && !mappings.accountId && <div className="notice"><AlertTriangle size={18}/><div><strong>Conta Azul</strong><p>A conta {CRS_FIXED_ACCOUNT} não foi encontrada na licença da CRS.</p></div></div>}
+      {connected && !mappings.payableCategoryId && <div className="notice"><AlertTriangle size={18}/><div><strong>Conta Azul</strong><p>A categoria {CRS_FIXED_PAYABLE_CATEGORY} não foi encontrada na licença da CRS.</p></div></div>}
+      {connected && !mappings.supplierId && <div className="notice"><AlertTriangle size={18}/><div><strong>Conta Azul</strong><p>O cadastro único da Shalom não foi encontrado na licença da CRS.</p></div></div>}
       {error && <div className="notice"><AlertTriangle size={18}/><div><strong>Conta Azul</strong><p>{error}</p></div></div>}
       {!!results.length && <div className="flow-checks">{results.map((item,index)=><span key={index}>{item.type} · {item.party}: {item.status} {item.protocolId && '· '+item.protocolId}</span>)}</div>}
       {done ? (
@@ -579,7 +581,7 @@ function CrsReview({
       ) : (
         <button
           className="confirm"
-          disabled={busy || !connected || !mappings.accountId || !balanced || !form.supplier || !form.payment}
+          disabled={busy || !connected || !mappings.accountId || !mappings.payableCategoryId || !mappings.supplierId || !balanced || !form.payment}
           onClick={onPrepare}
         >
           <CloudUpload /> {busy ? 'Preparando...' : 'Revisar envio à Conta Azul'}
@@ -871,11 +873,11 @@ export function App() {
       type: "Receita" as const,
       party,
       amount: allocations[party],
-      description: `Rateio ${form.category} - ${party}`,
+      description: `Rateio Benefício Cidadania - ${party}`,
     })),
     {
       type: "Despesa",
-      party: form.supplier,
+      party: CRS_FIXED_SUPPLIER,
       amount: form.amount,
       description: form.description,
     },
@@ -906,8 +908,8 @@ export function App() {
         setCrsMappings({
           ...blankCrsMappings,
           accountId:uniqueCaMatch(loaded.accounts || [],CRS_FIXED_ACCOUNT),
-          payableCategoryId:uniqueCaMatch(loaded.categories || [],form.category),
-          supplierId:uniqueCaMatch(loaded.suppliers || [],form.supplier),
+          payableCategoryId:uniqueCaMatch(loaded.categories || [],CRS_FIXED_PAYABLE_CATEGORY),
+          supplierId:uniqueShalomMatch(loaded.suppliers || []),
           clientIds,receivableCategoryIds,
         });
       }
