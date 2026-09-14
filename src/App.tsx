@@ -64,6 +64,7 @@ type CrsCatalogs = { accounts: Option[]; categories: Option[]; clients: Option[]
 type CrsMappings = { accountId: string; receivableCategoryIds: Record<string,string>; payableCategoryId: string; supplierId: string; clientIds: Record<string,string> };
 const blankCrsCatalogs: CrsCatalogs = {accounts:[],categories:[],clients:[],suppliers:[]};
 const blankCrsMappings: CrsMappings = {accountId:"",receivableCategoryIds:{},payableCategoryId:"",supplierId:"",clientIds:{}};
+const CRS_FIXED_ACCOUNT = '1.Banco Safra - Conta Corrente';
 const CRS_CLIENT_NAMES: Record<Restaurant,string> = {
   'Bafo da Prainha':'BAFO DA PRAINHA',
   'Casa Porto':'CASA PORTO',
@@ -560,7 +561,7 @@ function CrsReview({
       {connected && !done && <details className="ca-panel" open>
         <summary>Vínculos dos cinco lançamentos na Conta Azul da CRS</summary>
         <div className="mapgrid">
-          <MapSelect label="Conta financeira" value={mappings.accountId} items={catalogs.accounts} onChange={(v)=>onMappings({...mappings,accountId:v})}/>
+          <Field label="Conta financeira fixa" value={CRS_FIXED_ACCOUNT} onChange={()=>{}} readOnly/>
           {RESTAURANTS.map((restaurant)=><MapSelect key={'category-'+restaurant} label={'Categoria: '+CRS_CATEGORY_NAMES[restaurant]} value={mappings.receivableCategoryIds[restaurant] || ''} items={catalogs.categories} onChange={(v)=>onMappings({...mappings,receivableCategoryIds:{...mappings.receivableCategoryIds,[restaurant]:v}})}/>)}
           <MapSelect label="Categoria da despesa" value={mappings.payableCategoryId} items={catalogs.categories} onChange={(v)=>onMappings({...mappings,payableCategoryId:v})}/>
           {RESTAURANTS.map((restaurant)=><MapSelect key={restaurant} label={'Cliente: '+CRS_CLIENT_NAMES[restaurant]} value={mappings.clientIds[restaurant] || ''} items={catalogs.clients} onChange={(v)=>onMappings({...mappings,clientIds:{...mappings.clientIds,[restaurant]:v}})}/>)}
@@ -568,6 +569,7 @@ function CrsReview({
         </div>
       </details>}
       {!connected && <p className="crs-note">Conecte e confira a licença da CRS para enviar os lançamentos.</p>}
+      {connected && !mappings.accountId && <div className="notice"><AlertTriangle size={18}/><div><strong>Conta Azul</strong><p>A conta {CRS_FIXED_ACCOUNT} não foi encontrada na licença da CRS.</p></div></div>}
       {error && <div className="notice"><AlertTriangle size={18}/><div><strong>Conta Azul</strong><p>{error}</p></div></div>}
       {!!results.length && <div className="flow-checks">{results.map((item,index)=><span key={index}>{item.type} · {item.party}: {item.status} {item.protocolId && '· '+item.protocolId}</span>)}</div>}
       {done ? (
@@ -577,7 +579,7 @@ function CrsReview({
       ) : (
         <button
           className="confirm"
-          disabled={busy || !connected || !balanced || !form.supplier || !form.payment}
+          disabled={busy || !connected || !mappings.accountId || !balanced || !form.supplier || !form.payment}
           onClick={onPrepare}
         >
           <CloudUpload /> {busy ? 'Preparando...' : 'Revisar envio à Conta Azul'}
@@ -903,7 +905,7 @@ export function App() {
         });
         setCrsMappings({
           ...blankCrsMappings,
-          accountId:(loaded.accounts || []).length===1 ? loaded.accounts[0].id : '',
+          accountId:uniqueCaMatch(loaded.accounts || [],CRS_FIXED_ACCOUNT),
           payableCategoryId:uniqueCaMatch(loaded.categories || [],form.category),
           supplierId:uniqueCaMatch(loaded.suppliers || [],form.supplier),
           clientIds,receivableCategoryIds,
