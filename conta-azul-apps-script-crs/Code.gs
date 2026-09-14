@@ -150,7 +150,8 @@ function validateRateioMappings_(body) {
   const clients=['BAFO DA PRAINHA','CASA PORTO','O TORRESMEIRO (Capiau)','TASCARIA (2 de Fevereiro)'];
   const categories=['Recebíveis - Bafo','Recebíveis - Casa Porto','Recebíveis - Capiau','Recebíveis - Dois de Fevereiro'];
   const equal=function(a,b){return String(a).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase()===String(b).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();};
-  if (!c.accounts.some(function(x){return x.id===m.accountId;})) throw new Error('Escolha uma conta financeira da CRS.');
+  const fixedAccounts=c.accounts.filter(function(x){return equal(x.name,'1.Banco Safra - Conta Corrente');});
+  if (fixedAccounts.length!==1 || fixedAccounts[0].id!==m.accountId) throw new Error('A conta financeira da CRS deve ser 1.Banco Safra - Conta Corrente.');
   if (!c.categories.some(function(x){return x.id===m.payableCategoryId;})) throw new Error('Escolha uma categoria válida para a despesa.');
   if (!c.suppliers.some(function(x){return x.id===m.supplierId;})) throw new Error('Escolha o cadastro do fornecedor na CRS.');
   for (let i=0;i<names.length;i++) {
