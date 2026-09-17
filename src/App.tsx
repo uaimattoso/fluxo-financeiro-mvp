@@ -114,7 +114,7 @@ const empty: Form = {
   description: "",
   pix: "",
 };
-const PARSER_VERSION = 13;
+const PARSER_VERSION = 14;
 const digits = (value: string) => value.replace(/\D/g, "");
 function validCpf(value: string) {
   const cpf = digits(value);
@@ -154,6 +154,12 @@ const normalize = (v: string, year: string) => {
   if (p[2]?.length === 2) p[2] = "20" + p[2];
   return p.map((x, i) => (i < 2 ? x.padStart(2, "0") : x)).join("/");
 };
+const MONTH_NAMES = ["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"];
+const competenceLabel = (value: string) => {
+  const [month, year] = value.split("/");
+  const index = Number(month) - 1;
+  return index >= 0 && index < MONTH_NAMES.length ? `${MONTH_NAMES[index]}/${year}` : value;
+};
 function normalizeMoney(line: string) {
   const afterLabel = line
     .replace(/^.*?(?:val[o0]r|total)\s*[:;.,-]?\s*/i, "")
@@ -183,7 +189,7 @@ function normalizeMoney(line: string) {
 function extractDocumentTotal(text: string) {
   const normalized = text.replace(/\u00a0/g, " ").replace(/\s+/g, " ");
   const patterns = [
-    /(?:valor\s+do\s+documento|valor\s+cobrado|total\s+do\s+boleto|valor\s+total)[^\d]{0,35}([\d.]+,\d{2})/i,
+    /(?:valor\s+a\s+recolher|valor\s+do\s+documento|valor\s+cobrado|total\s+do\s+boleto|valor\s+total|total\s+da\s+guia)[^\d]{0,60}([\d.]+,\d{2})/i,
     /R\s*\$\s*([\d.]+,\d{2})/i,
   ];
   for (const pattern of patterns) {
@@ -311,17 +317,27 @@ function parse(raw: string) {
     );
   const crsDue =
     kind === "Rateio CRS"
-      ? text.match(/Vencimento[\s\S]{0,260}?(\d{2}\/\d{2}\/20\d{2})/i)?.[1] ||
+      ? text.match(/(?:Pagar\s+este\s+documento\s+até|Vencimento)[\s\S]{0,260}?(\d{2}\/\d{2}\/20\d{2})/i)?.[1] ||
         pay
       : "";
   const reference =
     kind === "Rateio CRS"
-      ? text.match(/Ref\.\s*(\d{2}\/20\d{2})/i)?.[1] || ""
+      ? text.match(/(?:Ref\.|Compet[eê]ncia)\s*:?\s*(\d{2}\/20\d{2})/i)?.[1] || ""
       : "";
   const documentNumber =
     kind === "Rateio CRS"
       ? text.match(/\b\d{2}\/\d{2}\/20\d{2}\s+(\d{3,})\b/)?.[1] || ""
       : "";
+  const crsCategory = /fgts|multa\s+de\s+fgts/i.test(low)
+    ? "FGTS e Multa de FGTS"
+    : /inss|\bgps\b/i.test(low)
+      ? "INSS sobre Salários - GPS"
+      : "Benefício Cidadania";
+  const crsDescriptionPrefix = crsCategory === "FGTS e Multa de FGTS"
+    ? "Guia FGTS"
+    : crsCategory === "INSS sobre Salários - GPS"
+      ? "Guia INSS/DCTFWEB"
+      : "Rateio Benefício Cidadania";
   const crsCompetence = reference
     ? new Date(
         Number(reference.slice(3)),
@@ -341,13 +357,13 @@ function parse(raw: string) {
       kind === "Banda"
         ? "Couvert Artístico"
         : kind === "Rateio CRS"
-          ? (/fgts|multa\s+de\s+fgts/i.test(low) ? "FGTS e Multa de FGTS" : /inss|\bgps\b/i.test(low) ? "INSS sobre Salários - GPS" : "Benefício Cidadania")
+          ? crsCategory
           : kind,
     description:
       kind === "Banda" && competence
         ? `Data do evento: ${competence} Banda: ${bandName}`
         : kind === "Rateio CRS"
-          ? `Rateio ${(/fgts|multa\s+de\s+fgts/i.test(low) ? "FGTS e Multa de FGTS" : /inss|\bgps\b/i.test(low) ? "INSS sobre Salários - GPS" : "Benefício Cidadania")}${reference ? " - Ref. " + reference : ""}${documentNumber ? " - Documento " + documentNumber : ""}`
+          ? `${crsDescriptionPrefix}${reference ? " REF: " + competenceLabel(reference) : ""}${documentNumber ? " - Documento " + documentNumber : ""}`
           : "",
     pix,
   };
