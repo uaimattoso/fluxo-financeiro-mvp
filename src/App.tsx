@@ -338,7 +338,7 @@ function parse(raw: string) {
     ? `${explicitReference[1]}/${explicitReference[2]}`
     : Object.keys(referenceCounts).sort((left, right) => referenceCounts[right] - referenceCounts[left])[0] || "";
   const documentNumber =
-    kind === "Rateio CRS"
+    kind === "Rateio CRS" && !dctfweb
       ? text.match(/\b\d{2}\/\d{2}\/20\d{2}\s+(\d{3,})\b/)?.[1] || ""
       : "";
   const crsCategory = /fgts|multa\s+de\s+fgts/i.test(low)
