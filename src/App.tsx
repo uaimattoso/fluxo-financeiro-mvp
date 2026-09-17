@@ -65,7 +65,8 @@ type CrsMappings = { accountId: string; receivableCategoryIds: Record<string,str
 const blankCrsCatalogs: CrsCatalogs = {accounts:[],categories:[],clients:[],suppliers:[]};
 const blankCrsMappings: CrsMappings = {accountId:"",receivableCategoryIds:{},payableCategoryId:"",supplierId:"",clientIds:{}};
 const CRS_FIXED_ACCOUNT = '1.Banco Safra - Conta Corrente';
-const CRS_FIXED_PAYABLE_CATEGORY = 'Benefício Cidadania';
+const CRS_DEFAULT_PAYABLE_CATEGORY = 'Benefício Cidadania';
+const CRS_PAYABLE_CATEGORIES = ['Benefício Cidadania','FGTS e Multa de FGTS','INSS sobre Salários - GPS'] as const;
 const CRS_FIXED_SUPPLIER = 'Shalom';
 const CRS_CLIENT_NAMES: Record<Restaurant,string> = {
   'Bafo da Prainha':'BAFO DA PRAINHA',
@@ -225,7 +226,7 @@ function parse(raw: string) {
     low = text.toLocaleLowerCase("pt-BR"),
     warnings: string[] = [];
   let detected: Kind | null =
-    /benef[ií]cio cidadania|pagador\s+crs servico/i.test(low)
+    /benef[ií]cio cidadania|pagador\s+crs servico|fgts|multa\s+de\s+fgts|inss|\bgps\b/i.test(low)
       ? "Rateio CRS"
       : /carv[aã]o/.test(low)
         ? "Carvão"
@@ -289,19 +290,17 @@ function parse(raw: string) {
       "",
     ) || "",
   );
-  if (kind === "Rateio CRS")
-    supplier = (
-      text.match(
-        /SHALOM\s+SAUDE,?\s+GESTAO\s+E\s+ADMINISTRACAO\s+DE\s+BENEFICIOS\s+LTDA/i,
-      )?.[0] || supplier
-    ).toUpperCase();
+  if (kind === "Rateio CRS") {
+    const noSupplier = /fgts|multa\s+de\s+fgts|inss|\bgps\b/i.test(low);
+    supplier = noSupplier ? "" : (text.match(/SHALOM\s+SAUDE,?\s+GESTAO\s+E\s+ADMINISTRACAO\s+DE\s+BENEFICIOS\s+LTDA/i)?.[0] || supplier).toUpperCase();
+  }
   const bandLine = lines.find((l) => /banda\s*:|grupo\s*:/i.test(l));
   const bandName =
     bandLine?.replace(/^.*?(?:banda|grupo)\s*:?-?\s*/i, "").trim() || "";
   if (!amount) warnings.push("Valor não encontrado.");
   if (!pay && kind !== "Rateio CRS")
     warnings.push("Data de pagamento não encontrada.");
-  if (!supplier) warnings.push("Favorecido não identificado com segurança.");
+  if (!supplier && !(kind === "Rateio CRS" && /fgts|multa\s+de\s+fgts|inss|\bgps\b/i.test(low))) warnings.push("Favorecido não identificado com segurança.");
   if (kind === "Banda" && !bandName)
     warnings.push("Nome da banda não identificado.");
   if (!refs.length && kind !== "Rateio CRS")
@@ -342,13 +341,13 @@ function parse(raw: string) {
       kind === "Banda"
         ? "Couvert Artístico"
         : kind === "Rateio CRS"
-          ? "Benefício Cidadania"
+          ? (/fgts|multa\s+de\s+fgts/i.test(low) ? "FGTS e Multa de FGTS" : /inss|\bgps\b/i.test(low) ? "INSS sobre Salários - GPS" : "Benefício Cidadania")
           : kind,
     description:
       kind === "Banda" && competence
         ? `Data do evento: ${competence} Banda: ${bandName}`
         : kind === "Rateio CRS"
-          ? `Rateio Benefício Cidadania${reference ? " - Ref. " + reference : ""}${documentNumber ? " - Documento " + documentNumber : ""}`
+          ? `Rateio ${(/fgts|multa\s+de\s+fgts/i.test(low) ? "FGTS e Multa de FGTS" : /inss|\bgps\b/i.test(low) ? "INSS sobre Salários - GPS" : "Benefício Cidadania")}${reference ? " - Ref. " + reference : ""}${documentNumber ? " - Documento " + documentNumber : ""}`
           : "",
     pix,
   };
@@ -453,6 +452,7 @@ function CrsReview({
   error: string;
   results: any[];
 }) {
+  const crsNeedsSupplier = form.category === "Benefício Cidadania";
   return (
     <div className="suggestion crs-review">
       <div className="actionrow">
@@ -471,7 +471,7 @@ function CrsReview({
       <div className="formgrid">
         <Field
           label="Fornecedor da despesa"
-          value={CRS_FIXED_SUPPLIER}
+          value={crsNeedsSupplier ? CRS_FIXED_SUPPLIER : "Sem fornecedor"}
           onChange={()=>{}}
           readOnly
           wide
@@ -491,7 +491,7 @@ function CrsReview({
           value={form.competence}
           onChange={(v) => update("competence", v)}
         />
-        <Field label="Categoria da despesa" value={CRS_FIXED_PAYABLE_CATEGORY} onChange={()=>{}} readOnly/>
+        <Field label="Categoria da despesa" value={form.category || CRS_DEFAULT_PAYABLE_CATEGORY} onChange={()=>{}} readOnly/>
         <Field
           label="Descrição da despesa"
           value={form.description}
@@ -563,15 +563,15 @@ function CrsReview({
         <div className="mapgrid">
           <Field label="Conta financeira fixa" value={CRS_FIXED_ACCOUNT} onChange={()=>{}} readOnly/>
           {RESTAURANTS.map((restaurant)=><MapSelect key={'category-'+restaurant} label={'Categoria: '+CRS_CATEGORY_NAMES[restaurant]} value={mappings.receivableCategoryIds[restaurant] || ''} items={catalogs.categories} onChange={(v)=>onMappings({...mappings,receivableCategoryIds:{...mappings.receivableCategoryIds,[restaurant]:v}})}/>)}
-          <Field label="Categoria da despesa fixa" value={CRS_FIXED_PAYABLE_CATEGORY} onChange={()=>{}} readOnly/>
+          <Field label="Categoria da despesa fixa" value={form.category || CRS_DEFAULT_PAYABLE_CATEGORY} onChange={()=>{}} readOnly/>
           {RESTAURANTS.map((restaurant)=><MapSelect key={restaurant} label={'Cliente: '+CRS_CLIENT_NAMES[restaurant]} value={mappings.clientIds[restaurant] || ''} items={catalogs.clients} onChange={(v)=>onMappings({...mappings,clientIds:{...mappings.clientIds,[restaurant]:v}})}/>)}
           <Field label="Fornecedor fixo" value={catalogs.suppliers.find(x=>x.id===mappings.supplierId)?.name || CRS_FIXED_SUPPLIER} onChange={()=>{}} readOnly/>
         </div>
       </details>}
       {!connected && <p className="crs-note">Conecte e confira a licença da CRS para enviar os lançamentos.</p>}
       {connected && !mappings.accountId && <div className="notice"><AlertTriangle size={18}/><div><strong>Conta Azul</strong><p>A conta {CRS_FIXED_ACCOUNT} não foi encontrada na licença da CRS.</p></div></div>}
-      {connected && !mappings.payableCategoryId && <div className="notice"><AlertTriangle size={18}/><div><strong>Conta Azul</strong><p>A categoria {CRS_FIXED_PAYABLE_CATEGORY} não foi encontrada na licença da CRS.</p></div></div>}
-      {connected && !mappings.supplierId && <div className="notice"><AlertTriangle size={18}/><div><strong>Conta Azul</strong><p>O cadastro único da Shalom não foi encontrado na licença da CRS.</p></div></div>}
+      {connected && !mappings.payableCategoryId && <div className="notice"><AlertTriangle size={18}/><div><strong>Conta Azul</strong><p>A categoria {form.category || CRS_DEFAULT_PAYABLE_CATEGORY} não foi encontrada na licença da CRS.</p></div></div>}
+      {connected && crsNeedsSupplier && !mappings.supplierId && <div className="notice"><AlertTriangle size={18}/><div><strong>Conta Azul</strong><p>O cadastro único da Shalom não foi encontrado na licença da CRS.</p></div></div>}
       {error && <div className="notice"><AlertTriangle size={18}/><div><strong>Conta Azul</strong><p>{error}</p></div></div>}
       {!!results.length && <div className="flow-checks">{results.map((item,index)=><span key={index}>{item.type} · {item.party}: {item.status} {item.protocolId && '· '+item.protocolId}</span>)}</div>}
       {done ? (
@@ -581,7 +581,7 @@ function CrsReview({
       ) : (
         <button
           className="confirm"
-          disabled={busy || !connected || !mappings.accountId || !mappings.payableCategoryId || !mappings.supplierId || !balanced || !form.payment}
+          disabled={busy || !connected || !mappings.accountId || !mappings.payableCategoryId || (crsNeedsSupplier && !mappings.supplierId) || !balanced || !form.payment}
           onClick={onPrepare}
         >
           <CloudUpload /> {busy ? 'Preparando...' : 'Revisar envio à Conta Azul'}
@@ -617,6 +617,7 @@ export function App() {
   const input = useRef<HTMLInputElement>(null);
   const recurring = ["Gelo", "Gás", "Carvão"].includes(form.kind);
   const crsFlow = form.kind === "Rateio CRS";
+  const crsNeedsSupplier = form.category === "Benefício Cidadania";
   const [caStatus, setCaStatus] = useState({
       configured: false,
       connected: false,
@@ -883,11 +884,11 @@ export function App() {
       type: "Receita" as const,
       party,
       amount: allocations[party],
-      description: `Rateio Benefício Cidadania - ${party}`,
+      description: `Rateio ${form.category || CRS_DEFAULT_PAYABLE_CATEGORY} - ${party}`,
     })),
     {
       type: "Despesa",
-      party: CRS_FIXED_SUPPLIER,
+      party: crsNeedsSupplier ? CRS_FIXED_SUPPLIER : "",
       amount: form.amount,
       description: form.description,
     },
@@ -918,8 +919,8 @@ export function App() {
         setCrsMappings({
           ...blankCrsMappings,
           accountId:uniqueCaMatch(loaded.accounts || [],CRS_FIXED_ACCOUNT),
-          payableCategoryId:uniqueCaMatch(loaded.categories || [],CRS_FIXED_PAYABLE_CATEGORY),
-          supplierId:uniqueShalomMatch(loaded.suppliers || []),
+          payableCategoryId:uniqueCaMatch(loaded.categories || [],form.category || CRS_DEFAULT_PAYABLE_CATEGORY),
+          supplierId:form.category === "Benefício Cidadania" ? uniqueShalomMatch(loaded.suppliers || []) : "",
           clientIds,receivableCategoryIds,
         });
       }
