@@ -114,7 +114,7 @@ const empty: Form = {
   description: "",
   pix: "",
 };
-const PARSER_VERSION = 15;
+const PARSER_VERSION = 16;
 const digits = (value: string) => value.replace(/\D/g, "");
 function validCpf(value: string) {
   const cpf = digits(value);
@@ -159,6 +159,12 @@ const competenceLabel = (value: string) => {
   const [month, year] = value.split("/");
   const index = Number(month) - 1;
   return index >= 0 && index < MONTH_NAMES.length ? `${MONTH_NAMES[index]}/${year}` : value;
+};
+const competenceEndDate = (value: string) => {
+  const [month, year] = value.split("/").map(Number);
+  if (!month || !year || month < 1 || month > 12) return value;
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${String(lastDay).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
 };
 function normalizeMoney(line: string) {
   const afterLabel = line
@@ -345,7 +351,7 @@ function parse(raw: string) {
     : crsCategory === "INSS sobre Salários - GPS"
       ? "Guia INSS/DCTFWEB"
       : "Rateio Benefício Cidadania";
-  const crsCompetence = reference;
+  const crsCompetence = competenceEndDate(reference);
   const form: Form = {
     kind,
     supplier,
