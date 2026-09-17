@@ -320,12 +320,11 @@ function parse(raw: string) {
       ? text.match(/(?:Pagar\s+este\s+documento\s+até|Vencimento)[\s\S]{0,260}?(\d{2}\/\d{2}\/20\d{2})/i)?.[1] ||
         pay
       : "";
-  const referenceToken =
-    kind === "Rateio CRS"
-      ? text.match(/(?:Ref\.|Compet[eê]ncia)\s*:?\s*([01]?\d)\s*\/\s*(20\d{2})/i)?.[0] ||
-        text.match(/\b(0[1-9]|1[0-2])\s*\/\s*(20\d{2})\b/)?.[0] || ""
-      : "";
-  const reference = referenceToken.replace(/\s/g, "");
+  const referenceCandidates = kind === "Rateio CRS"
+    ? [...text.matchAll(/\b(0[1-9]|1[0-2])\D{1,8}(20\d{2})\b/g)].map((match) => `${match[1]}/${match[2]}`)
+    : [];
+  const referenceCounts = referenceCandidates.reduce<Record<string, number>>((counts, value) => ({ ...counts, [value]: (counts[value] || 0) + 1 }), {});
+  const reference = Object.keys(referenceCounts).sort((left, right) => referenceCounts[right] - referenceCounts[left])[0] || "";
   const documentNumber =
     kind === "Rateio CRS"
       ? text.match(/\b\d{2}\/\d{2}\/20\d{2}\s+(\d{3,})\b/)?.[1] || ""
