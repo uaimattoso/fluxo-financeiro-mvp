@@ -216,7 +216,7 @@ async function readPdf(file: File) {
     "pdfjs-dist/build/pdf.worker.min.mjs",
     import.meta.url,
   ).toString();
-  const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() })
+  const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer(), disableWorker: true })
     .promise;
   const pages: string[] = [];
   for (let n = 1; n <= pdf.numPages; n++) {
