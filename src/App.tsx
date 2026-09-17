@@ -320,10 +320,13 @@ function parse(raw: string) {
       ? text.match(/(?:Pagar\s+este\s+documento\s+até|Vencimento)[\s\S]{0,260}?(\d{2}\/\d{2}\/20\d{2})/i)?.[1] ||
         pay
       : "";
-  const reference =
+  const referenceMatch =
     kind === "Rateio CRS"
-      ? text.match(/(?:Ref\.|Compet[eê]ncia)\s*:?\s*(\d{2}\/20\d{2})/i)?.[1] || ""
-      : "";
+      ? text.match(/(?:Ref\.|Compet[eê]ncia)\s*:?\s*([01]?\d)\s*\/\s*(20\d{2})/i)
+      : null;
+  const reference = referenceMatch
+    ? `${referenceMatch[1].padStart(2, "0")}/${referenceMatch[2]}`
+    : "";
   const documentNumber =
     kind === "Rateio CRS"
       ? text.match(/\b\d{2}\/\d{2}\/20\d{2}\s+(\d{3,})\b/)?.[1] || ""
@@ -338,13 +341,7 @@ function parse(raw: string) {
     : crsCategory === "INSS sobre Salários - GPS"
       ? "Guia INSS/DCTFWEB"
       : "Rateio Benefício Cidadania";
-  const crsCompetence = reference
-    ? new Date(
-        Number(reference.slice(3)),
-        Number(reference.slice(0, 2)),
-        0,
-      ).toLocaleDateString("pt-BR")
-    : "";
+  const crsCompetence = reference;
   const form: Form = {
     kind,
     supplier,
@@ -1501,4 +1498,3 @@ export function App() {
     </main>
   );
 }
-
