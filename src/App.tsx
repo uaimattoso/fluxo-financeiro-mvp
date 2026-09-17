@@ -325,7 +325,12 @@ function parse(raw: string) {
     ? [...text.matchAll(/\b(0[1-9]|1[0-2])\D{1,8}(20\d{2})\b/g)].map((match) => `${match[1]}/${match[2]}`)
     : [];
   const referenceCounts = referenceCandidates.reduce<Record<string, number>>((counts, value) => ({ ...counts, [value]: (counts[value] || 0) + 1 }), {});
-  const reference = Object.keys(referenceCounts).sort((left, right) => referenceCounts[right] - referenceCounts[left])[0] || "";
+  const explicitReference = dctfweb
+    ? text.match(/\bPA\s*:?\s*(0[1-9]|1[0-2])\s*[\/.\-]\s*(20\d{2})/i)
+    : null;
+  const reference = explicitReference
+    ? `${explicitReference[1]}/${explicitReference[2]}`
+    : Object.keys(referenceCounts).sort((left, right) => referenceCounts[right] - referenceCounts[left])[0] || "";
   const documentNumber =
     kind === "Rateio CRS"
       ? text.match(/\b\d{2}\/\d{2}\/20\d{2}\s+(\d{3,})\b/)?.[1] || ""
