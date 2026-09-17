@@ -588,7 +588,14 @@ function CrsReview({
           {RESTAURANTS.map((restaurant)=><MapSelect key={'category-'+restaurant} label={'Categoria: '+CRS_CATEGORY_NAMES[restaurant]} value={mappings.receivableCategoryIds[restaurant] || ''} items={catalogs.categories} onChange={(v)=>onMappings({...mappings,receivableCategoryIds:{...mappings.receivableCategoryIds,[restaurant]:v}})}/>)}
           <Field label="Categoria da despesa fixa" value={form.category || CRS_DEFAULT_PAYABLE_CATEGORY} onChange={()=>{}} readOnly/>
           {RESTAURANTS.map((restaurant)=><MapSelect key={restaurant} label={'Cliente: '+CRS_CLIENT_NAMES[restaurant]} value={mappings.clientIds[restaurant] || ''} items={catalogs.clients} onChange={(v)=>onMappings({...mappings,clientIds:{...mappings.clientIds,[restaurant]:v}})}/>)}
-          <Field label="Fornecedor fixo" value={catalogs.suppliers.find(x=>x.id===mappings.supplierId)?.name || CRS_FIXED_SUPPLIER} onChange={()=>{}} readOnly/>
+          <Field
+            label="Fornecedor"
+            value={crsNeedsSupplier
+              ? catalogs.suppliers.find(x=>x.id===mappings.supplierId)?.name || CRS_FIXED_SUPPLIER
+              : "Sem fornecedor"}
+            onChange={()=>{}}
+            readOnly
+          />
         </div>
       </details>}
       {!connected && <p className="crs-note">Conecte e confira a licença da CRS para enviar os lançamentos.</p>}
