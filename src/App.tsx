@@ -914,7 +914,7 @@ export function App() {
       type: "Receita" as const,
       party,
       amount: allocations[party],
-      description: `Rateio ${form.category || CRS_DEFAULT_PAYABLE_CATEGORY} - ${party}`,
+      description: `Rateio ${CRS_ALLOCATION[party]}% ${form.description || form.category || CRS_DEFAULT_PAYABLE_CATEGORY} - ${party}`,
     })),
     {
       type: "Despesa",
