@@ -114,7 +114,7 @@ const empty: Form = {
   description: "",
   pix: "",
 };
-const PARSER_VERSION = 14;
+const PARSER_VERSION = 15;
 const digits = (value: string) => value.replace(/\D/g, "");
 function validCpf(value: string) {
   const cpf = digits(value);
@@ -189,7 +189,7 @@ function normalizeMoney(line: string) {
 function extractDocumentTotal(text: string) {
   const normalized = text.replace(/\u00a0/g, " ").replace(/\s+/g, " ");
   const patterns = [
-    /(?:valor\s+a\s+recolher|valor\s+do\s+documento|valor\s+cobrado|total\s+do\s+boleto|valor\s+total|total\s+da\s+guia)[^\d]{0,60}([\d.]+,\d{2})/i,
+    /(?:valor\s+a\s+recolher|valor\s+do\s+documento|valor\s+total\s+do\s+documento|valor\s+cobrado|total\s+do\s+boleto|valor\s+total|total\s+da\s+guia)[^\d]{0,60}([\d.]+,\d{2})/i,
     /R\s*\$\s*([\d.]+,\d{2})/i,
   ];
   for (const pattern of patterns) {
@@ -231,8 +231,9 @@ function parse(raw: string) {
   const text = raw.replace(/\r/g, ""),
     low = text.toLocaleLowerCase("pt-BR"),
     warnings: string[] = [];
+  const dctfweb = /documento\s+de\s+arrecada[cç][aã]o\s+de\s+receitas\s+federais|darf|valor\s+total\s+do\s+documento|per[ií]odo\s+de\s+apura[cç][aã]o|contr\s+prev/i.test(low);
   let detected: Kind | null =
-    /benef[ií]cio cidadania|pagador\s+crs servico|fgts|multa\s+de\s+fgts|inss|\bgps\b/i.test(low)
+    /benef[ií]cio cidadania|pagador\s+crs servico|fgts|multa\s+de\s+fgts|inss|\bgps\b/i.test(low) || dctfweb
       ? "Rateio CRS"
       : /carv[aã]o/.test(low)
         ? "Carvão"
@@ -297,7 +298,7 @@ function parse(raw: string) {
     ) || "",
   );
   if (kind === "Rateio CRS") {
-    const noSupplier = /fgts|multa\s+de\s+fgts|inss|\bgps\b/i.test(low);
+    const noSupplier = /fgts|multa\s+de\s+fgts|inss|\bgps\b/i.test(low) || dctfweb;
     supplier = noSupplier ? "" : (text.match(/SHALOM\s+SAUDE,?\s+GESTAO\s+E\s+ADMINISTRACAO\s+DE\s+BENEFICIOS\s+LTDA/i)?.[0] || supplier).toUpperCase();
   }
   const bandLine = lines.find((l) => /banda\s*:|grupo\s*:/i.test(l));
@@ -306,7 +307,7 @@ function parse(raw: string) {
   if (!amount) warnings.push("Valor não encontrado.");
   if (!pay && kind !== "Rateio CRS")
     warnings.push("Data de pagamento não encontrada.");
-  if (!supplier && !(kind === "Rateio CRS" && /fgts|multa\s+de\s+fgts|inss|\bgps\b/i.test(low))) warnings.push("Favorecido não identificado com segurança.");
+  if (!supplier && !(kind === "Rateio CRS" && (/fgts|multa\s+de\s+fgts|inss|\bgps\b/i.test(low) || dctfweb))) warnings.push("Favorecido não identificado com segurança.");
   if (kind === "Banda" && !bandName)
     warnings.push("Nome da banda não identificado.");
   if (!refs.length && kind !== "Rateio CRS")
@@ -331,7 +332,7 @@ function parse(raw: string) {
       : "";
   const crsCategory = /fgts|multa\s+de\s+fgts/i.test(low)
     ? "FGTS e Multa de FGTS"
-    : /inss|\bgps\b/i.test(low)
+    : /inss|\bgps\b/i.test(low) || dctfweb
       ? "INSS sobre Salários - GPS"
       : "Benefício Cidadania";
   const crsDescriptionPrefix = crsCategory === "FGTS e Multa de FGTS"
