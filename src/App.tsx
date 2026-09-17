@@ -322,7 +322,8 @@ function parse(raw: string) {
       : "";
   const referenceMatch =
     kind === "Rateio CRS"
-      ? text.match(/(?:Ref\.|Compet[eê]ncia)\s*:?\s*([01]?\d)\s*\/\s*(20\d{2})/i)
+      ? text.match(/(?:Ref\.|Compet[eê]ncia)\s*:?\s*([01]?\d)\s*\/\s*(20\d{2})/i) ||
+        text.match(/\b(0[1-9]|1[0-2])\/(20\d{2})\b/)
       : null;
   const reference = referenceMatch
     ? `${referenceMatch[1].padStart(2, "0")}/${referenceMatch[2]}`
