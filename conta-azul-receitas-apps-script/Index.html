@@ -63,7 +63,7 @@ async function boot(){
   try{
     const s=await run('getAppState');
     if(!s.configured){show('Configure CA_CLIENT_ID e CA_CLIENT_SECRET nas propriedades do script.','error');$('connection').innerHTML='<span class="pill">Não configurado</span>';return}
-    if(!s.connected){$('connection').innerHTML='<button class="secondary" onclick="location.href='+JSON.stringify(s.authorizeUrl)+'">Conectar Conta Azul</button>';show('Conecte o Conta Azul para carregar os cadastros.','')}
+    if(!s.connected){$('connection').innerHTML='<button id="connectButton" class="secondary">Conectar Conta Azul</button>';document.getElementById('connectButton').addEventListener('click',function(){window.open(s.authorizeUrl,'_blank')});show('Conecte o Conta Azul para carregar os cadastros.','')}
     else{$('connection').innerHTML='<span class="pill">Conectado</span>';show('Conta Azul conectado. Carregando cadastros…');loadCatalogs()}
   }catch(e){show(e.message||e,'error')}
 }
