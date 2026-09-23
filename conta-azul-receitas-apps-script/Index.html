@@ -70,23 +70,38 @@ async function loadCatalogs(){
   catch(e){show(e.message||e,'error')}
 }
 function fill(id,items){$(id).innerHTML='<option value="">Selecione…</option>'+items.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join('')}
+const mappingFields=[['bank','accounts','Conta financeira',true],['category','categories','Categoria',true],['costCenter','costCenters','Centro de custo',false],['contact','contacts','Contato/cliente',false]];
+function normalizedName(value){return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().replace(/\s+/g,' ').toLowerCase()}
+function matchingId(name,items){const matches=items.filter(x=>normalizedName(x.name)===normalizedName(name));return matches.length===1?String(matches[0].id):''}
+function mappingIssues(){
+  if(!state.catalogs)return ['Aguarde o carregamento dos cadastros.'];
+  const issues=[];
+  state.rows.forEach(r=>mappingFields.forEach(([key,bucket,label,required])=>{const name=String(r[key]||'').trim();if(!name){if(required)issues.push('Linha '+r.row+': '+label+' não informada.');return}const id=state.mapping[bucket][name];if(!id||!(state.catalogs[bucket]||[]).some(x=>String(x.id)===id))issues.push(label+': '+name+' — selecione uma correspondência.')}));
+  return [...new Set(issues)];
+}
+function updateReady(){const issues=mappingIssues();$('send').disabled=!!state.busy||!state.rows.length||!!state.valueErrors||!!issues.length;const box=$('mappingStatus');if(box)box.textContent=state.rows.length?(issues.length?issues.join(' | '):'Todos os cadastros reconhecidos. Confira a prévia antes de confirmar.'):'Envie uma planilha.'}
 function renderMappings(){
-  if(!state.catalogs||!state.rows.length)return;
-  const unique=function(key){return [...new Set(state.rows.map(function(r){return String(r[key]||'').trim()}).filter(Boolean))]};
-  const options=function(items,selected){return '<option value="">Selecione…</option>'+items.map(function(x){return '<option value="'+esc(x.id)+'" '+(x.id===selected?'selected':'')+'>'+esc(x.name)+'</option>'}).join('')};
-  const accounts=unique('bank'), contacts=unique('contact'), categories=unique('category'), centers=unique('costCenter');
-  $('mappingInfo').innerHTML='<p><b>Conta Financeira por linha:</b> selecione o cadastro correspondente a cada valor da última coluna da planilha.</p>'+
-    accounts.map(function(name){return '<div class="field" style="display:inline-flex;width:30%;margin:8px 8px 0 0"><label>Conta Financeira: '+esc(name)+'</label><select data-kind="account" data-name="'+esc(name)+'">'+options(state.catalogs.accounts,state.mapping.accounts[name]||'')+'</select></div>'}).join('')+
-    contacts.map(function(name){return '<div class="field" style="display:inline-flex;width:30%;margin:8px 8px 0 0"><label>Contato/cliente: '+esc(name)+'</label><select data-kind="contact" data-name="'+esc(name)+'">'+options(state.catalogs.contacts,state.mapping.contacts[name]||'')+'</select></div>'}).join('')+
-    categories.map(function(name){return '<div class="field" style="display:inline-flex;width:30%;margin:8px 8px 0 0"><label>Categoria: '+esc(name)+'</label><select data-kind="category" data-name="'+esc(name)+'">'+options(state.catalogs.categories,state.mapping.categories[name]||'')+'</select></div>'}).join('')+
-    centers.map(function(name){return '<div class="field" style="display:inline-flex;width:30%;margin:8px 8px 0 0"><label>Centro de custo: '+esc(name)+'</label><select data-kind="center" data-name="'+esc(name)+'">'+options(state.catalogs.costCenters,state.mapping.costCenters[name]||'')+'</select></div>'}).join('');
-  document.querySelectorAll('#mappingInfo select').forEach(function(select){select.addEventListener('change',function(){const name=select.dataset.name;const kind=select.dataset.kind;if(kind==='account')state.mapping.accounts[name]=select.value;else if(kind==='contact')state.mapping.contacts[name]=select.value;else if(kind==='category')state.mapping.categories[name]=select.value;else state.mapping.costCenters[name]=select.value;});});
+  if(!state.catalogs||!state.rows.length){updateReady();return}
+  let html='<p>Associação automática por nome. Se houver nomes repetidos ou não encontrados, selecione o cadastro correspondente.</p>';
+  mappingFields.forEach(([key,bucket,label])=>{
+    const items=state.catalogs[bucket]||[];
+    [...new Set(state.rows.map(r=>String(r[key]||'').trim()).filter(Boolean))].forEach(name=>{
+      let selected=state.mapping[bucket][name]||'';
+      if(!items.some(x=>String(x.id)===selected))selected=matchingId(name,items);
+      state.mapping[bucket][name]=selected;
+      html+='<div class="field" style="display:inline-flex;width:30%;margin:8px 8px 0 0"><label>'+esc(label)+': '+esc(name)+'</label><select data-bucket="'+bucket+'" data-name="'+esc(name)+'"><option value="">Selecione…</option>'+items.map(x=>'<option value="'+esc(x.id)+'" '+(String(x.id)===selected?'selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></div>';
+    });
+  });
+  $('mappingInfo').innerHTML=html+'<p id="mappingStatus" role="status"></p>';
+  document.querySelectorAll('#mappingInfo select').forEach(select=>select.addEventListener('change',()=>{state.mapping[select.dataset.bucket][select.dataset.name]=select.value;updateReady()}));
+  updateReady();
 }
 $('file').addEventListener('change',async e=>{
   const f=e.target.files[0]; if(!f)return;
   try{
     const data=await f.arrayBuffer(), wb=XLSX.read(data,{type:'array',cellDates:true});
     const ws=wb.Sheets[wb.SheetNames[0]], raw=XLSX.utils.sheet_to_json(ws,{defval:''});
+    state.mapping={accounts:{},contacts:{},categories:{},costCenters:{}};
     state.rows=raw.map((r,i)=>({row:i+2,competence:r['Data de Competência'],dueDate:r['Data de Vencimento'],paymentDate:r['Data de Pagamento'],gross:r['Valor Bruto'],fee:r['Valor Tarifa'],category:r['Categoria'],description:r['Descrição']||r['Descrição'],costCenter:r['Centro de Custo'],bank:r['Conta Financeira']||r['Banco'],contact:r['Cliente/Fornecedor']||r['Contato/cliente']||r['Cliente']||''}));
     render();renderMappings();$('fileInfo').textContent=f.name+' · '+state.rows.length+' linhas';
   }catch(err){show('Não foi possível ler o arquivo: '+err.message,'error')}
@@ -98,9 +113,10 @@ function render(){
   const body=state.rows.map(r=>{const g=num(r.gross),t=Math.abs(num(r.fee));gross+=g;fee+=t;if(!(g>0))errors.push('linha '+r.row+': bruto inválido');if(!isFinite(t)||t<0)errors.push('linha '+r.row+': tarifa inválida');return '<tr><td>'+r.row+'</td><td>'+esc(date(r.competence))+'</td><td>'+esc(r.description)+'</td><td>R$ '+g.toFixed(2)+'</td><td>R$ '+t.toFixed(2)+'</td><td>R$ '+(g-t).toFixed(2)+'</td></tr>'}).join('');
   $('preview').innerHTML='<thead><tr><th>Linha</th><th>Competência</th><th>Descrição</th><th>Bruto</th><th>Tarifa</th><th>Líquido</th></tr></thead><tbody>'+body+'</tbody>';
   $('summary').innerHTML='<b>'+state.rows.length+'</b> linhas · bruto <b>R$ '+gross.toFixed(2)+'</b> · tarifa <b>R$ '+fee.toFixed(2)+'</b> · líquido <b>R$ '+(gross-fee).toFixed(2)+'</b>'+(errors.length?' · <span style="color:#a22">'+errors.join(' | ')+'</span>':'');
-  $('send').disabled=!!errors.length||!state.rows.length;
+  state.valueErrors=errors.length;updateReady();
 }
 $('send').addEventListener('click',async()=>{
+  const issues=mappingIssues();if(issues.length){show(issues.join(' | '),'error');updateReady();return}
   if(!confirm('Criar '+state.rows.length+' lançamentos de receita no Conta Azul?'))return;
   $('send').disabled=true;show('Enviando lançamentos…');
   try{
