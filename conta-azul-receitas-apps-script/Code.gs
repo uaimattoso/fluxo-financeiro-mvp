@@ -51,7 +51,6 @@ function createReceipts(input) {
   const rows = (input && input.rows) || [];
   const map = (input && input.mapping) || {};
   if (!rows.length) throw new Error('Nenhuma linha válida para importar.');
-  if (!map.accountId || !map.contactId) throw new Error('Selecione a conta financeira e o cliente/contato padrão.');
   const props = PropertiesService.getScriptProperties();
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -97,14 +96,19 @@ function normalizeRow_(row, map, rowNumber) {
   if (net < 0) throw new Error('Linha ' + rowNumber + ': tarifa maior que o valor bruto.');
   const categoryId = map.categories && map.categories[String(row.category || '').trim()];
   if (!categoryId) throw new Error('Linha ' + rowNumber + ': categoria sem mapeamento.');
+  const accountName = String(row.bank || '').trim();
+  const accountId = map.accounts && map.accounts[accountName];
+  if (!accountId) throw new Error('Linha ' + rowNumber + ': Conta Financeira sem mapeamento para "' + accountName + '".');
+  const contactName = String(row.contact || '').trim();
+  const contactId = contactName && map.contacts ? map.contacts[contactName] : '';
+  if (contactName && !contactId) throw new Error('Linha ' + rowNumber + ': contato/cliente sem mapeamento para "' + contactName + '".');
   const centerId = map.costCenters && map.costCenters[String(row.costCenter || '').trim()];
   const payload = {
     data_competencia: isoDate_(row.competence, rowNumber),
     valor: gross,
     observacao: String(row.description || 'Receita importada'),
     descricao: String(row.description || 'Receita importada'),
-    contato: map.contactId,
-    conta_financeira: map.accountId,
+    conta_financeira: accountId,
     rateio: [{
       id_categoria: categoryId,
       valor: gross,
@@ -115,7 +119,7 @@ function normalizeRow_(row, map, rowNumber) {
         descricao: String(row.description || 'Receita importada'),
         data_vencimento: isoDate_(row.dueDate, rowNumber),
         nota: 'Importação de receita · pagamento: ' + String(row.paymentDate || ''),
-        conta_financeira: map.accountId,
+        conta_financeira: accountId,
         detalhe_valor: {
           multa: 0, juros: 0, valor_bruto: gross, valor_liquido: net,
           desconto: 0, taxa: fee
@@ -124,6 +128,7 @@ function normalizeRow_(row, map, rowNumber) {
       }]
     }
   };
+  if (contactId) payload.contato = contactId;
   return { rowNumber: rowNumber, gross: gross, fee: fee, net: net, payload: payload };
 }
 
