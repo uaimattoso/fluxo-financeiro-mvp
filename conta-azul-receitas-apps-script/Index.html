@@ -38,11 +38,9 @@
   <section class="card">
     <h2>2. Mapeamento da Conta Azul</h2>
     <div class="grid">
-      <div class="field"><label>Conta financeira</label><select id="account"></select></div>
-      <div class="field"><label>Contato/cliente padrão</label><select id="contact"></select></div>
       <div class="field"><label>Método de pagamento</label><select id="method"><option value="CARTAO_CREDITO">Cartão de crédito</option><option value="CARTAO_DEBITO">Cartão de débito</option><option value="TRANSFERENCIA_BANCARIA">Transferência bancária</option><option value="OUTRO">Outro</option></select></div>
     </div>
-    <div id="mappingInfo" class="muted" style="margin-top:12px"></div>
+    <div id="mappingInfo" class="muted" style="margin-top:12px">Envie a planilha para mapear Conta Financeira, contato, categoria e centro de custo.</div>
   </section>
 
   <section class="card">
@@ -54,7 +52,7 @@
   <div id="result"></div>
 </main>
 <script>
-let state={rows:[],mapping:{categories:{},costCenters:{}}};
+let state={rows:[],mapping:{accounts:{},contacts:{},categories:{},costCenters:{}}};
 const $=id=>document.getElementById(id);
 function show(text,kind){$('message').className='status '+(kind||'');$('message').textContent=text}
 function esc(v){return String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
@@ -68,17 +66,29 @@ async function boot(){
   }catch(e){show(e.message||e,'error')}
 }
 async function loadCatalogs(){
-  try{const c=await run('getCatalogs'); state.catalogs=c; fill('account',c.accounts);fill('contact',c.contacts);show('Cadastros carregados. Escolha os padrões e envie a planilha.','ok')}
+  try{const c=await run('getCatalogs'); state.catalogs=c; renderMappings();show('Cadastros carregados. Confira os mapeamentos da planilha e envie o arquivo.','ok')}
   catch(e){show(e.message||e,'error')}
 }
 function fill(id,items){$(id).innerHTML='<option value="">Selecione…</option>'+items.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join('')}
+function renderMappings(){
+  if(!state.catalogs||!state.rows.length)return;
+  const unique=function(key){return [...new Set(state.rows.map(function(r){return String(r[key]||'').trim()}).filter(Boolean))]};
+  const options=function(items,selected){return '<option value="">Selecione…</option>'+items.map(function(x){return '<option value="'+esc(x.id)+'" '+(x.id===selected?'selected':'')+'>'+esc(x.name)+'</option>'}).join('')};
+  const accounts=unique('bank'), contacts=unique('contact'), categories=unique('category'), centers=unique('costCenter');
+  $('mappingInfo').innerHTML='<p><b>Conta Financeira por linha:</b> selecione o cadastro correspondente a cada valor da última coluna da planilha.</p>'+
+    accounts.map(function(name){return '<div class="field" style="display:inline-flex;width:30%;margin:8px 8px 0 0"><label>Conta Financeira: '+esc(name)+'</label><select data-kind="account" data-name="'+esc(name)+'">'+options(state.catalogs.accounts,state.mapping.accounts[name]||'')+'</select></div>'}).join('')+
+    contacts.map(function(name){return '<div class="field" style="display:inline-flex;width:30%;margin:8px 8px 0 0"><label>Contato/cliente: '+esc(name)+'</label><select data-kind="contact" data-name="'+esc(name)+'">'+options(state.catalogs.contacts,state.mapping.contacts[name]||'')+'</select></div>'}).join('')+
+    categories.map(function(name){return '<div class="field" style="display:inline-flex;width:30%;margin:8px 8px 0 0"><label>Categoria: '+esc(name)+'</label><select data-kind="category" data-name="'+esc(name)+'">'+options(state.catalogs.categories,state.mapping.categories[name]||'')+'</select></div>'}).join('')+
+    centers.map(function(name){return '<div class="field" style="display:inline-flex;width:30%;margin:8px 8px 0 0"><label>Centro de custo: '+esc(name)+'</label><select data-kind="center" data-name="'+esc(name)+'">'+options(state.catalogs.costCenters,state.mapping.costCenters[name]||'')+'</select></div>'}).join('');
+  document.querySelectorAll('#mappingInfo select').forEach(function(select){select.addEventListener('change',function(){const name=select.dataset.name;const kind=select.dataset.kind;if(kind==='account')state.mapping.accounts[name]=select.value;else if(kind==='contact')state.mapping.contacts[name]=select.value;else if(kind==='category')state.mapping.categories[name]=select.value;else state.mapping.costCenters[name]=select.value;});});
+}
 $('file').addEventListener('change',async e=>{
   const f=e.target.files[0]; if(!f)return;
   try{
     const data=await f.arrayBuffer(), wb=XLSX.read(data,{type:'array',cellDates:true});
     const ws=wb.Sheets[wb.SheetNames[0]], raw=XLSX.utils.sheet_to_json(ws,{defval:''});
-    state.rows=raw.map((r,i)=>({row:i+2,competence:r['Data de Competência'],dueDate:r['Data de Vencimento'],paymentDate:r['Data de Pagamento'],gross:r['Valor Bruto'],fee:r['Valor Tarifa'],category:r['Categoria'],description:r['Descrição']||r['Descrição'],costCenter:r['Centro de Custo'],bank:r['Banco']}));
-    render();$('fileInfo').textContent=f.name+' · '+state.rows.length+' linhas';
+    state.rows=raw.map((r,i)=>({row:i+2,competence:r['Data de Competência'],dueDate:r['Data de Vencimento'],paymentDate:r['Data de Pagamento'],gross:r['Valor Bruto'],fee:r['Valor Tarifa'],category:r['Categoria'],description:r['Descrição']||r['Descrição'],costCenter:r['Centro de Custo'],bank:r['Conta Financeira']||r['Banco'],contact:r['Cliente/Fornecedor']||r['Contato/cliente']||r['Cliente']||''}));
+    render();renderMappings();$('fileInfo').textContent=f.name+' · '+state.rows.length+' linhas';
   }catch(err){show('Não foi possível ler o arquivo: '+err.message,'error')}
 });
 function date(v){if(v instanceof Date)return v.toISOString().slice(0,10);return String(v||'')}
@@ -91,12 +101,10 @@ function render(){
   $('send').disabled=!!errors.length||!state.rows.length;
 }
 $('send').addEventListener('click',async()=>{
-  const account=$('account').value,contact=$('contact').value;
-  if(!account||!contact){show('Selecione a conta financeira e o contato padrão antes de enviar.','error');return}
   if(!confirm('Criar '+state.rows.length+' lançamentos de receita no Conta Azul?'))return;
   $('send').disabled=true;show('Enviando lançamentos…');
   try{
-    const out=await run('createReceipts',{rows:state.rows.map(r=>Object.assign({},r,{competence:date(r.competence),dueDate:date(r.dueDate),paymentDate:date(r.paymentDate)})),mapping:{accountId:account,contactId:contact,paymentMethod:$('method').value,categories:{},costCenters:{}}});
+    const out=await run('createReceipts',{rows:state.rows.map(r=>Object.assign({},r,{competence:date(r.competence),dueDate:date(r.dueDate),paymentDate:date(r.paymentDate)})),mapping:{accounts:state.mapping.accounts,contacts:state.mapping.contacts,paymentMethod:$('method').value,categories:state.mapping.categories,costCenters:state.mapping.costCenters}});
     const ok=out.results.filter(x=>x.status!=='ERROR').length, bad=out.results.length-ok;
     $('result').innerHTML='<section class="card '+(bad?'error':'ok')+'"><b>Resultado:</b> '+ok+' enviados, '+bad+' com erro.<div class="table-wrap"><table><tr><th>Linha</th><th>Status</th><th>Protocolo</th><th>Mensagem</th></tr>'+out.results.map(x=>'<tr><td>'+esc(x.row)+'</td><td>'+esc(x.status)+'</td><td>'+esc(x.protocolId||'')+'</td><td>'+esc(x.message||'')+'</td></tr>').join('')+'</table></div></section>';
     show(bad?'Importação concluída com ressalvas.':'Importação concluída.','ok');
